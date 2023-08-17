@@ -1,0 +1,24 @@
+syntax = "proto3";
+package qst;
+
+message Input {
+  string str = 1;
+}
+message AppInfo {
+  string name = 1;
+  string exec = 2;
+}
+message Empty {
+}
+service Interact {
+  // sample rpc
+  rpc Query(Input) returns(AppInfo) {}
+  rpc ListApp(Input) returns(stream AppInfo) {}
+  rpc RunApp(AppInfo) returns(Empty) {}
+  // //server rpc
+  // rpc streamData(StreamRequest) returns (stream StreamResponse){}
+  // //client rpc
+  // rpc ctreamData(stream StreamRequest) returns (StreamResponse){}
+  // //server and client rpc
+  // rpc scstreamData(stream StreamRequest) returns (stream StreamResponse){}
+}

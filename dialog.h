@@ -1,29 +1,42 @@
 #ifndef DIALOG_H
 #define DIALOG_H
 
-#include "select.h"
+#include <vector>
+#include <memory>
 #include <QDialog>
 #include <QLineEdit>
-#include <QVBoxLayout>
 #include <QMenuBar>
+#include <QVBoxLayout>
+
+#include "comm/qst.grpc.pb.h"
+#include "comm/qst.pb.h"
+#include "edit.h"
+#include "select.h"
 #define DefaultWidth 360
 QT_BEGIN_NAMESPACE
 // namespace Ui { class Dialog; }
 QT_END_NAMESPACE
-
-class Dialog : public QDialog {
-  Q_OBJECT
-  QVBoxLayout *mainLayout;
-  QMenuBar *menuBar;
-  QLineEdit *lineEdit;
-  Select *selectWidget;
-
-public:
-  Dialog(QWidget *parent = nullptr);
-  QSize sizeHint() const override;
-  ~Dialog();
-
-private:
-  // Ui::Dialog *ui;
-};
-#endif // DIALOG_H
+namespace qst {
+  class Dialog : public QDialog {
+    Q_OBJECT
+    std::unique_ptr<QVBoxLayout> mainLayout;
+    std::unique_ptr<QMenuBar> menuBar;
+    std::unique_ptr<Edit> lineEdit;
+    std::unique_ptr<Select> select;
+    std::unique_ptr<qst::Interact::Stub> stub;
+    std::vector<AppInfo> apps;
+    int32_t index = 0;
+  public:
+    Dialog(QWidget *parent = nullptr);
+    ~Dialog();
+  public Q_SLOTS:
+    void updateList(const QString& text);
+    void down();
+    void up();
+    void finish();
+    // QSize sizeHint() const override;
+  private:
+    // Ui::Dialog *ui;
+  };
+}  // namespace qst
+#endif  // DIALOG_H

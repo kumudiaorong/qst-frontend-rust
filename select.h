@@ -1,16 +1,27 @@
 #ifndef SELECT_H
 #define SELECT_H
 
+#include <memory>
 #include <QVBoxLayout>
 #include <QWidget>
-class Select:public QWidget
-{
-    Q_OBJECT
-    QVBoxLayout *mainLayout;
-public:
-    Select(QWidget *parent=nullptr);
-    void setText(const QString &text);
-    
-};
+#include <vector>
 
-#endif // SELECT_H
+#include "comm/qst.pb.h"
+namespace qst {
+  class Select : public QVBoxLayout {
+    Q_OBJECT
+    int32_t index;
+  public:
+    Select(QWidget *parent = nullptr);
+  protected:
+    // void focusInEvent(QFocusEvent *event) override;
+    // void keyPressEvent(QKeyEvent *event) override;
+
+  public Q_SLOTS:
+    void setText(const std::vector<qst::AppInfo>& apps);
+    void focusFirst();
+    void focusLast();
+  };
+}  // namespace qst
+
+#endif  // SELECT_H
