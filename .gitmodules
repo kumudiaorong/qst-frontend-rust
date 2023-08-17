@@ -1,0 +1,3 @@
+[submodule "qst-proto"]
+	path = qst-proto
+	url = git@github.com:kumudiaorong/qst-proto.git

@@ -1,68 +1,38 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(qst-core LANGUAGES CXX)
+project(qst-gui LANGUAGES CXX)
 
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-get_filename_component(qst_proto "./protos/qst.proto" ABSOLUTE)
-get_filename_component(qst_proto_path "${qst_proto}" PATH)
-
-# set(CMAKE_PREFIX_PATH "/home/kmdr/tools/Qt/6.2.4/gcc_64" ${CMAKE_PREFIX_PATH})
-set(_PROTOBUF_PROTOC protoc)
-set(_GRPC_GRPCPP grpc++)
-set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
-set(_REFLECTION gRPC::grpc++_reflection)
-find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
-
-# Generated sources
-set(qst_proto_srcs "${CMAKE_CURRENT_SOURCE_DIR}/comm/qst.pb.cc")
-set(qst_proto_hdrs "${CMAKE_CURRENT_SOURCE_DIR}/comm/qst.pb.h")
-set(qst_grpc_srcs "${CMAKE_CURRENT_SOURCE_DIR}/comm/qst.grpc.pb.cc")
-set(qst_grpc_hdrs "${CMAKE_CURRENT_SOURCE_DIR}/comm/qst.grpc.pb.h")
-
-add_custom_command(
-  OUTPUT "${qst_proto_srcs}" "${qst_proto_hdrs}" "${qst_grpc_srcs}" "${qst_grpc_hdrs}"
-  COMMAND ${_PROTOBUF_PROTOC}
-  ARGS --grpc_out "${CMAKE_CURRENT_SOURCE_DIR}/comm"
-  --cpp_out "${CMAKE_CURRENT_SOURCE_DIR}/comm"
-  -I "${qst_proto_path}"
-  --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
-  "${qst_proto}"
-  DEPENDS "${qst_proto}")
-add_custom_target(qst-gui-protos DEPENDS ${qst_proto_srcs} ${qst_proto_hdrs} ${qst_grpc_srcs} ${qst_grpc_hdrs})
-
-# find_package(protobuf REQUIRED)
-
-# SET(PROTOBUF_INCLUDE_DIR, "/usr/local/include")
-include_directories(".")
-
-find_package(Protobuf CONFIG REQUIRED)
-find_package(gRPC CONFIG REQUIRED)
-
 # set(CMAKE_PREFIX_PATH "/home/kmdr/tools/qt/6.2.4/gcc_64" ${CMAKE_PREFIX_PATH})
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
-add_library(helper
-  ${qst_grpc_srcs}
-  ${qst_grpc_hdrs}
-  ${qst_proto_srcs}
-  ${qst_proto_hdrs})
-
-# set(CMAKE_PREFIX_PATH "/home/kmdr/tools/qt/6.2.4/gcc_64" ${CMAKE_PREFIX_PATH})
 add_executable(qst-ui
   main.cpp
   select.cpp
   dialog.cpp
   edit.cpp
 )
+
+set_target_properties(qst-ui PROPERTIES
+  AUTOMOC ON
+  AUTORCC ON
+  AUTOUIC ON
+)
+
+add_subdirectory(qst-proto)
+
+target_include_directories(qst-ui PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/qst-proto
+)
+
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+
 target_link_libraries(qst-ui PRIVATE
-  helper
+  qst-grpc-cpp
   Qt${QT_VERSION_MAJOR}::Widgets
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
@@ -70,7 +40,6 @@ target_link_libraries(qst-ui PRIVATE
 )
 
 # find_package(ICU 73.0 COMPONENTS uc i18n REQUIRED)
-
 # message(STATUS "!!!${ICU_LINK_LIBRARIES}")
 install(TARGETS qst-ui
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
