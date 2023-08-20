@@ -35,7 +35,9 @@ find_package(QT 6.2.4 NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
 target_link_libraries(qst-f
+  PRIVATE
   qst-grpc-cpp
+  PUBLIC
   Qt${QT_VERSION_MAJOR}::Widgets
 )
 
