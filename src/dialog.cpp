@@ -17,8 +17,8 @@
 #include <QPushButton>
 #include <QStyleOptionButton>
 
-#include "cpp/qst.grpc.pb.h"
-#include "cpp/qst.pb.h"
+#include "qst.grpc.pb.h"
+#include "qst.pb.h"
 #include "dialog.h"
 #include "edit.h"
 #include "select.h"

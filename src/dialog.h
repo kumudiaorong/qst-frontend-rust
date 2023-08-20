@@ -8,8 +8,8 @@
 #include <QMenuBar>
 #include <QVBoxLayout>
 
-#include "cpp/qst.grpc.pb.h"
-#include "cpp/qst.pb.h"
+#include "qst.grpc.pb.h"
+#include "qst.pb.h"
 #include "edit.h"
 #include "select.h"
 #define DefaultWidth 360

@@ -6,7 +6,7 @@
 #include <QWidget>
 #include <vector>
 
-#include "cpp/qst.pb.h"
+#include "qst.pb.h"
 namespace qst {
   class Select : public QVBoxLayout {
     Q_OBJECT

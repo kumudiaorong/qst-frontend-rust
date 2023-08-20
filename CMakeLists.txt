@@ -18,11 +18,9 @@ set_target_properties(qst-f PROPERTIES
   AUTOUIC ON
 )
 
-add_subdirectory(qst-proto)
-
 target_include_directories(qst-f PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/qst-proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/qst-proto/cpp
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -33,6 +31,8 @@ endif()
 
 find_package(QT 6.2.4 NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+
+add_subdirectory(qst-proto)
 
 target_link_libraries(qst-f
   PRIVATE
