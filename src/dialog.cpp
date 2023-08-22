@@ -82,7 +82,7 @@ namespace qst {
     request.set_str(text.toStdString());
     auto reader = stub->ListApp(&context, request);
     apps.clear();
-    AppInfo app;
+    Display app;
     while(reader->Read(&app)) {
       apps.push_back(app);
     }
@@ -127,8 +127,10 @@ namespace qst {
     qDebug() << "finish " << index << " " << mainLayout->count();
     if(index > 0) {
       ::grpc::ClientContext context;
+      ExecHint execHint;
+      execHint.set_name(apps[index - 1].name());
       Empty empty;
-      auto status = stub->RunApp(&context, apps[index - 1], &empty);
+      auto status = stub->RunApp(&context, execHint, &empty);
       qDebug() << "finish " << status.ok();
     }
   }

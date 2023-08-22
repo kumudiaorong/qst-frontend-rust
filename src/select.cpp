@@ -13,7 +13,7 @@ namespace qst {
     // mainLayout->addWidget(new QLabel("test"));
     this->setObjectName("select");
   }
-  void Select::setText(const std::vector<qst::AppInfo>& apps) {
+  void Select::setText(const std::vector<qst::Display>& apps) {
     // int number = QRandomGenerator::global()->bounded(10);
     // remove all widget
     QLayoutItem *child;

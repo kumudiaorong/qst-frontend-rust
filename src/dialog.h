@@ -24,7 +24,7 @@ namespace qst {
     std::unique_ptr<Edit> lineEdit;
     std::unique_ptr<Select> select;
     std::unique_ptr<qst::Interact::Stub> stub;
-    std::vector<AppInfo> apps;
+    std::vector<Display> apps;
     int32_t index = 0;
   public:
     Dialog(QWidget *parent = nullptr);

@@ -18,7 +18,7 @@ namespace qst {
     // void keyPressEvent(QKeyEvent *event) override;
 
   public Q_SLOTS:
-    void setText(const std::vector<qst::AppInfo>& apps);
+    void setText(const std::vector<qst::Display>& apps);
     void focusFirst();
     void focusLast();
   };
