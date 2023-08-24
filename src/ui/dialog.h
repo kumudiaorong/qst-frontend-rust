@@ -1,16 +1,17 @@
-#ifndef DIALOG_H
-#define DIALOG_H
+#pragma once
+#ifndef QST_FRONTEND_DIALOG_H
+#define QST_FRONTEND_DIALOG_H
 
-#include <vector>
 #include <memory>
 #include <QDialog>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QVBoxLayout>
+#include <string_view>
+#include <vector>
 
-#include "qst.grpc.pb.h"
-#include "qst.pb.h"
 #include "edit.h"
+#include "qst.pb.h"
 #include "select.h"
 #define DefaultWidth 360
 QT_BEGIN_NAMESPACE
@@ -23,19 +24,24 @@ namespace qst {
     std::unique_ptr<QMenuBar> menuBar;
     std::unique_ptr<Edit> lineEdit;
     std::unique_ptr<Select> select;
-    std::unique_ptr<qst::Interact::Stub> stub;
     std::vector<Display> apps;
     int32_t index = 0;
   public:
     Dialog(QWidget *parent = nullptr);
     ~Dialog();
-  public Q_SLOTS:
-    void updateList(const QString& text);
+  signals:
+    void inputChanged(std::string_view text);
+    void runApp(const ExecHint& hint);
+  public slots:
+    void updateList(const std::vector<Display>& apps);
     void down();
     void up();
     void finish();
     // QSize sizeHint() const override;
   private:
+  protected slots:
+    void _inputChanged(const QString& text);
+
     // Ui::Dialog *ui;
   };
 }  // namespace qst

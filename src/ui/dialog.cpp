@@ -8,6 +8,7 @@
 #include <qnamespace.h>
 #include <qpushbutton.h>
 #include <qstyle.h>
+#include <qtmetamacros.h>
 #include <qwindowdefs.h>
 
 #include <memory>
@@ -17,10 +18,10 @@
 #include <QPushButton>
 #include <QStyleOptionButton>
 
-#include "qst.grpc.pb.h"
-#include "qst.pb.h"
 #include "dialog.h"
 #include "edit.h"
+#include "qst.grpc.pb.h"
+#include "qst.pb.h"
 #include "select.h"
 namespace qst {
   Dialog::Dialog(QWidget *parent)
@@ -29,8 +30,8 @@ namespace qst {
   // , ui(new Ui::Dialog)
   {
     // ui->setupUi(this);
-    stub =
-      std::make_unique<qst::Interact::Stub>(grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
+    // stub =
+    std::make_unique<qst::Interact::Stub>(grpc::CreateChannel("localhost:50051", grpc::InsecureChannelCredentials()));
     setObjectName("Dialog");
     select = std::make_unique<Select>();
     menuBar = std::make_unique<QMenuBar>();
@@ -70,23 +71,13 @@ namespace qst {
     // this->setFixedWidth(2000);
     // connect(exitAction, &QAction::triggered, this, &QDialog::accept);
     // connect(lineEdit, &QLineEdit::textChanged, label, &QLabel::setText);
-    connect(lineEdit.get(), &QLineEdit::textChanged, this, &Dialog::updateList);
+    connect(lineEdit.get(), &QLineEdit::textChanged, this,&Dialog::_inputChanged);
     connect(lineEdit.get(), &Edit::down, this, &Dialog::down);
     connect(lineEdit.get(), &Edit::up, this, &Dialog::up);
     connect(lineEdit.get(), &Edit::enter, this, &Dialog::finish);
   }
   // QSize Dialog::sizeHint() const { return this->layout()->sizeHint(); }
-  void Dialog::updateList(const QString& text) {
-    ::grpc::ClientContext context;
-    Input request;
-    request.set_str(text.toStdString());
-    auto reader = stub->ListApp(&context, request);
-    apps.clear();
-    Display app;
-    while(reader->Read(&app)) {
-      apps.push_back(app);
-    }
-    ::grpc::Status status = reader->Finish();
+  void Dialog::updateList(const std::vector<Display>& apps) {
     // remove all widget
     index = 0;
     QLayoutItem *child;
@@ -108,6 +99,7 @@ namespace qst {
       mainLayout->addWidget(pb);
     }
     mainLayout->addStretch(0);
+    this->apps = std::move(apps);
   }
   void Dialog::down() {
     qDebug() << "down " << index << " " << mainLayout->count();
@@ -126,13 +118,14 @@ namespace qst {
   void Dialog::finish() {
     qDebug() << "finish " << index << " " << mainLayout->count();
     if(index > 0) {
-      ::grpc::ClientContext context;
       ExecHint execHint;
       execHint.set_name(apps[index - 1].name());
-      Empty empty;
-      auto status = stub->RunApp(&context, execHint, &empty);
-      qDebug() << "finish " << status.ok();
+      emit runApp(execHint);
     }
+  }
+  void Dialog::_inputChanged(const QString& text) {
+    qDebug() << "inputChanged : " << text << Qt::endl;
+    emit inputChanged(text.toStdString());
   }
   Dialog::~Dialog() {
     // delete ui;

@@ -1,5 +1,6 @@
-#ifndef QST_EDIT_H
-#define QST_EDIT_H
+#pragma once
+#ifndef QST_FRONTEND_EDIT_H
+#define QST_FRONTEND_EDIT_H
 #include <QLineEdit>
 namespace qst {
   class Edit : public QLineEdit {
@@ -10,7 +11,7 @@ namespace qst {
   protected:
     void keyPressEvent(QKeyEvent *) override;
     // void focusInEvent(QFocusEvent *) override;
-  Q_SIGNALS:
+  signals:
     void down();
     void up();
     void enter();

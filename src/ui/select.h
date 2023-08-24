@@ -1,5 +1,6 @@
-#ifndef SELECT_H
-#define SELECT_H
+#pragma once
+#ifndef QST_FRONTEND_SELECT_H
+#define QST_FRONTEND_SELECT_H
 
 #include <memory>
 #include <QVBoxLayout>
@@ -17,7 +18,7 @@ namespace qst {
     // void focusInEvent(QFocusEvent *event) override;
     // void keyPressEvent(QKeyEvent *event) override;
 
-  public Q_SLOTS:
+  public slots:
     void setText(const std::vector<qst::Display>& apps);
     void focusFirst();
     void focusLast();

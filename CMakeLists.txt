@@ -14,24 +14,6 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/qst-proto
 )
 
-add_executable(qst-f
-  src/main.cpp
-  src/select.cpp
-  src/dialog.cpp
-  src/edit.cpp
-)
-
-set_target_properties(qst-f PROPERTIES
-  AUTOMOC ON
-  AUTORCC ON
-  AUTOUIC ON
-)
-
-target_include_directories(qst-f PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/qst-proto/cpp
-)
-
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_PREFIX_PATH "~/tools/qt/6.2.4/gcc_64" ${CMAKE_PREFIX_PATH})
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -41,13 +23,17 @@ endif()
 find_package(QT 6.2.4 NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
+add_executable(qst-f
+  main.cpp
+)
+
+add_subdirectory(src)
 add_subdirectory(qst-proto)
 
-target_link_libraries(qst-f
-  PRIVATE
-  qst-grpc-cpp
+target_link_libraries(
+  qst-f
   PUBLIC
-  Qt${QT_VERSION_MAJOR}::Widgets
+  qst-core
 )
 
 # find_package(ICU 73.0 COMPONENTS uc i18n REQUIRED)
