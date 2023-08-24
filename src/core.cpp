@@ -11,6 +11,7 @@ namespace qst {
     : QApplication(argc, argv)
     , logger(spdlog::create_async<spdlog::sinks::stdout_color_sink_mt>("backend")) {
     spdlog::set_default_logger(logger);
+    spdlog::set_level(spdlog::level::debug);
     this->setApplicationDisplayName("Qst");
     for(int i = 1; i < argc; i++) {
       if(strcmp(argv[i], "--addr") == 0) {
