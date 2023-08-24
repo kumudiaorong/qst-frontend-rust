@@ -29,11 +29,15 @@ add_executable(qst-f
 
 add_subdirectory(src)
 add_subdirectory(qst-proto)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog)
+
+target_link_libraries(qst-f PRIVATE spdlog::spdlog)
 
 target_link_libraries(
   qst-f
-  PUBLIC
+  PRIVATE
   qst-core
+  spdlog::spdlog
 )
 
 # find_package(ICU 73.0 COMPONENTS uc i18n REQUIRED)
