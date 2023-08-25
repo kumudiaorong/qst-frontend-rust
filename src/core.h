@@ -5,13 +5,13 @@
 
 #include "comm.h"
 #include "dialog.h"
-#include "spdlog/spdlog.h"
+// #include "spdlog/spdlog.h"
 
 namespace qst {
   class QstFrontendCore : public QApplication {
     Dialog dialog;
     Comm comm;
-    std::shared_ptr<spdlog::logger> logger;
+    // std::shared_ptr<spdlog::logger> logger;
   public:
     QstFrontendCore(int& argc, char *argv[]);
     ~QstFrontendCore();

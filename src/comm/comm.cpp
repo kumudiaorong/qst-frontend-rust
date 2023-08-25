@@ -1,12 +1,12 @@
 #include <grpcpp/create_channel.h>
 
-#include <algorithm>
 #include <iostream>
 #include <string_view>
 #include <vector>
 
 #include "comm.h"
 #include "qst.pb.h"
+#include "spdlog/spdlog.h"
 namespace qst {
   Comm::Comm() {
   }
@@ -19,8 +19,8 @@ namespace qst {
     stub = std::make_unique<qst::Interact::Stub>(grpc::CreateChannel(addr, grpc::InsecureChannelCredentials()));
   }
   void Comm::listApp(std::string_view text) {
-    //test
-    std::cout << "listApp : " << text << std::endl;
+    // test
+    spdlog::trace("listApp\t: text\t= {}", text);
     ::grpc::ClientContext context;
     Input request;
     request.set_str(text);

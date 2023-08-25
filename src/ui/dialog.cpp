@@ -4,25 +4,21 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
-#include <qlineedit.h>
-#include <qnamespace.h>
-#include <qpushbutton.h>
-#include <qstyle.h>
-#include <qtmetamacros.h>
-#include <qwindowdefs.h>
 
 #include <memory>
 #include <QFormLayout>
 #include <QLabel>
 #include <QMenuBar>
 #include <QPushButton>
-#include <QStyleOptionButton>
+// #include <QStyleOptionButton>
 
 #include "dialog.h"
 #include "edit.h"
 #include "qst.grpc.pb.h"
 #include "qst.pb.h"
 #include "select.h"
+#include "spdlog/spdlog.h"
+
 namespace qst {
   Dialog::Dialog(QWidget *parent)
     : QDialog(parent)
@@ -71,7 +67,7 @@ namespace qst {
     // this->setFixedWidth(2000);
     // connect(exitAction, &QAction::triggered, this, &QDialog::accept);
     // connect(lineEdit, &QLineEdit::textChanged, label, &QLabel::setText);
-    connect(lineEdit.get(), &QLineEdit::textChanged, this,&Dialog::_inputChanged);
+    connect(lineEdit.get(), &QLineEdit::textChanged, this, &Dialog::_inputChanged);
     connect(lineEdit.get(), &Edit::down, this, &Dialog::down);
     connect(lineEdit.get(), &Edit::up, this, &Dialog::up);
     connect(lineEdit.get(), &Edit::enter, this, &Dialog::finish);
@@ -79,9 +75,9 @@ namespace qst {
   // QSize Dialog::sizeHint() const { return this->layout()->sizeHint(); }
   void Dialog::updateList(const std::vector<Display>& apps) {
     // remove all widget
+    spdlog::trace("updateList\t: apps.size\t= {}", apps.size());
     index = 0;
     QLayoutItem *child;
-    qDebug() << "UpdateList " << mainLayout->count();
     while((child = mainLayout->takeAt(1)) != nullptr) {
       delete child->widget();
       delete child;
@@ -102,21 +98,21 @@ namespace qst {
     this->apps = std::move(apps);
   }
   void Dialog::down() {
-    qDebug() << "down " << index << " " << mainLayout->count();
+    // spdlog::trace("down: index={}", index);
     if(index < mainLayout->count() - 1 - 1) {
       index++;
       dynamic_cast<QPushButton *>(mainLayout->itemAt(index)->widget())->setChecked(true);
     }
   }
   void Dialog::up() {
-    qDebug() << "up " << index << " " << mainLayout->count();
+    // spdlog::trace("up: index={}", index);
     if(index > 1) {
       index--;
       dynamic_cast<QPushButton *>(mainLayout->itemAt(index)->widget())->setChecked(true);
     }
   }
   void Dialog::finish() {
-    qDebug() << "finish " << index << " " << mainLayout->count();
+    // spdlog::trace("finish: index={}", index);
     if(index > 0) {
       ExecHint execHint;
       execHint.set_name(apps[index - 1].name());
@@ -124,7 +120,7 @@ namespace qst {
     }
   }
   void Dialog::_inputChanged(const QString& text) {
-    qDebug() << "inputChanged : " << text << Qt::endl;
+    spdlog::trace("_inputChanged\t: text\t= {}", text.toStdString());
     emit inputChanged(text.toStdString());
   }
   Dialog::~Dialog() {

@@ -14,8 +14,8 @@ set_target_properties(qst-front-end-comm PROPERTIES
 
 target_link_libraries(qst-front-end-comm
   PRIVATE
-  Qt${QT_VERSION_MAJOR}::Core
   qst-grpc-cpp
+  Qt${QT_VERSION_MAJOR}::Core
 )
 
 target_include_directories(qst-front-end-comm PUBLIC
