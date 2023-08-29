@@ -7,6 +7,7 @@ use iced::Application;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     xlog_rs::log::init(std::io::stdout());
+    xlog_rs::log::set_level(xlog_rs::log::Level::Trace);
     ui::App::run(iced::Settings::with_flags(ui::Flags::new(
         "http://127.0.0.1:50051".to_string(),
     )))

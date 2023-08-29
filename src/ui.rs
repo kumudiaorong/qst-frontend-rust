@@ -178,6 +178,7 @@ impl Application for App {
                 Command::none()
             }
             AppMessage::List(list) => {
+                self.choosed_index = 0;
                 self.scroll_area = (0, self.win_size.height as usize - 80);
                 self.list = list;
                 Command::none()
@@ -226,26 +227,28 @@ impl Application for App {
                             log::trace("Pressed down");
                             if self.choosed_index < self.list.list.len() {
                                 self.choosed_index += 1;
-                            }
-                            let minscrollend = self.choosed_index * 35 - 5;
-                            log::trace(format!("minscrollend: {}", minscrollend).as_str());
-                            if minscrollend > self.scroll_area.1 as usize {
-                                let scrolloff = minscrollend - self.scroll_area.1;
-                                log::trace(
-                                    format!("Scroll to down with offset {}", scrolloff).as_str(),
-                                );
-                                self.scroll_area = (self.scroll_area.0 + scrolloff, minscrollend);
-                                let all = ((self.list.list.len() * 35)
-                                    - 5
-                                    - (self.scroll_area.1 - self.scroll_area.0))
-                                    as f32;
-                                return widget::scrollable::snap_to(
-                                    widget::scrollable::Id::new("s0"),
-                                    widget::scrollable::RelativeOffset {
-                                        x: 0.0,
-                                        y: self.scroll_area.0 as f32 / all,
-                                    },
-                                );
+                                let minscrollend = self.choosed_index * 35 - 5;
+                                log::trace(format!("minscrollend: {}", minscrollend).as_str());
+                                if minscrollend > self.scroll_area.1 as usize {
+                                    let scrolloff = minscrollend - self.scroll_area.1;
+                                    log::trace(
+                                        format!("Scroll to down with offset {}", scrolloff)
+                                            .as_str(),
+                                    );
+                                    self.scroll_area =
+                                        (self.scroll_area.0 + scrolloff, minscrollend);
+                                    let all = ((self.list.list.len() * 35)
+                                        - 5
+                                        - (self.scroll_area.1 - self.scroll_area.0))
+                                        as f32;
+                                    return widget::scrollable::snap_to(
+                                        widget::scrollable::Id::new("s0"),
+                                        widget::scrollable::RelativeOffset {
+                                            x: 0.0,
+                                            y: self.scroll_area.0 as f32 / all,
+                                        },
+                                    );
+                                }
                             }
                             Command::none()
                         }
@@ -253,25 +256,28 @@ impl Application for App {
                             log::trace("Pressed up");
                             if self.choosed_index > 1 {
                                 self.choosed_index -= 1;
+                                let minscrollbegin = (self.choosed_index - 1) * 35;
+                                log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
+                                if minscrollbegin < self.scroll_area.0 {
+                                    let scrolloff = self.scroll_area.0 - minscrollbegin;
+                                    log::trace(
+                                        format!("Scroll to up with offset {}", scrolloff).as_str(),
+                                    );
+                                    self.scroll_area =
+                                        (minscrollbegin, self.scroll_area.1 - scrolloff);
+                                    let all = ((self.list.list.len() * 35)
+                                        - 5
+                                        - (self.scroll_area.1 - self.scroll_area.0))
+                                        as f32;
+                                    return widget::scrollable::snap_to(
+                                        widget::scrollable::Id::new("s0"),
+                                        widget::scrollable::RelativeOffset {
+                                            x: 0.0,
+                                            y: self.scroll_area.0 as f32 / all,
+                                        },
+                                    );
+                                }
                             }
-                            let minscrollbegin = (self.choosed_index - 1) * 35;
-                            log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
-                            if minscrollbegin < self.scroll_area.0 {
-                                let scrolloff = self.scroll_area.0 - minscrollbegin;
-                                log::trace(
-                                    format!("Scroll to up with offset {}", scrolloff).as_str(),
-                                );
-                                self.scroll_area = (minscrollbegin, self.scroll_area.1 - scrolloff);
-                                let all = ((self.list.list.len() * 35) - 5) as f32;
-                                return widget::scrollable::snap_to(
-                                    widget::scrollable::Id::new("s0"),
-                                    widget::scrollable::RelativeOffset {
-                                        x: 0.0,
-                                        y: self.scroll_area.0 as f32 / all,
-                                    },
-                                );
-                            }
-
                             Command::none()
                         }
                         _ => Command::none(),
@@ -281,11 +287,13 @@ impl Application for App {
                 _ => Command::none(),
             },
             AppMessage::Submit => {
-                self.run_app(qst_comm::ExecHint {
-                    name: self.input.clone(),
-                    file: None,
-                    url: None,
-                });
+                if self.choosed_index > 0 {
+                    self.run_app(qst_comm::ExecHint {
+                        name: self.list.list[self.choosed_index - 1].name.clone(),
+                        file: None,
+                        url: None,
+                    });
+                }
                 Command::none()
             }
         }
