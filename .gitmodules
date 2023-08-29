@@ -1,6 +1,6 @@
 [submodule "qst-proto"]
 	path = qst-proto
 	url = https://github.com/kumudiaorong/qst-proto.git
-[submodule "third_party/spdlog"]
-	path = third_party/spdlog
-	url = https://github.com/gabime/spdlog
+[submodule "xlog-rs"]
+	path = xlog-rs
+	url = https://github.com/kumudiaorong/xlog-rs.git
