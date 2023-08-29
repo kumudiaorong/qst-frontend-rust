@@ -1,6 +1,8 @@
 use std::fmt::format;
 
 use crate::comm::{self, qst_comm};
+use crate::select;
+use iced::widget::text_input;
 use iced::widget::text_input::focus;
 use iced::widget::{self, column, row, Column, Row};
 use iced::{
@@ -11,18 +13,29 @@ use iced_futures::core::widget::operation::focusable::{focus_next, focus_previou
 use iced_futures::futures::channel::mpsc;
 use iced_futures::subscription;
 use xlog_rs::log;
-enum State {
-    Starting,
-    Ready(comm::Comm),
-}
+
 #[derive(Debug, Clone)]
 pub struct Error {
     msg: String,
 }
+impl Error {
+    pub fn from(msg: impl ToString) -> Self {
+        Self {
+            msg: msg.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub enum ConnectMessage {
+    S2uReady(mpsc::Sender<comm::Event>),
+    U2cTrySendConnect,
+    C2uConnectFailed(Error),
+    Connected,
+}
+
 #[derive(Debug, Clone)]
 pub enum AppMessage {
-    Ready(mpsc::Sender<comm::Event>),
-    Connected,
+    OnConnect(ConnectMessage),
     Error(String),
     Input(String),
     List(qst_comm::DisplayList),
@@ -46,8 +59,7 @@ pub struct App {
     tx: Option<mpsc::Sender<comm::Event>>,
     is_connected: bool,
     addr: String,
-    choosed_index: usize,
-    scroll_area: (usize, usize),
+    select: select::Select,
     win_size: iced::Size<u32>,
 }
 impl App {
@@ -136,8 +148,7 @@ impl Application for App {
                 input: String::new(),
                 list: qst_comm::DisplayList::default(),
                 addr: flags.addr,
-                choosed_index: 0,
-                scroll_area: (0, 0),
+                select: select::Select::with_height(WIN_INIT_SIZE.height - 80),
                 win_size: WIN_INIT_SIZE,
             },
             window::resize(WIN_INIT_SIZE),
@@ -150,19 +161,45 @@ impl Application for App {
 
     fn update(&mut self, message: AppMessage) -> Command<AppMessage> {
         match message {
-            AppMessage::Ready(tx) => {
-                self.tx = Some(tx);
-                if let Err(e) = self.try_send(comm::Event::Connect(self.addr.clone())) {
-                    log::warn(format!("connect failed: {:?}", e).as_str());
+            AppMessage::OnConnect(cmsg) => match cmsg {
+                ConnectMessage::S2uReady(tx) => {
+                    self.tx = Some(tx);
+                    iced::Command::perform(
+                        async move {
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        },
+                        |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                    )
                 }
-                Command::none()
-            }
+                ConnectMessage::U2cTrySendConnect => {
+                    if let Err(e) = self.try_send(comm::Event::Connect(self.addr.clone())) {
+                        log::warn(format!("send connect failed: {:?}", e).as_str());
+                        iced::Command::perform(
+                            async move {
+                                std::thread::sleep(std::time::Duration::from_millis(10));
+                            },
+                            |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                        )
+                    } else {
+                        widget::text_input::focus(text_input::Id::new("i0"))
+                    }
+                }
+                ConnectMessage::Connected => {
+                    self.is_connected = true;
+                    Command::none()
+                }
+                ConnectMessage::C2uConnectFailed(e) => {
+                    log::warn(format!("connect failed: {:?}", e).as_str());
+                    iced::Command::perform(
+                        async move {
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        },
+                        |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                    )
+                }
+            },
             AppMessage::Error(msg) => {
                 println!("error: {}", msg);
-                Command::none()
-            }
-            AppMessage::Connected => {
-                self.is_connected = true;
                 Command::none()
             }
             AppMessage::Empty => Command::none(),
@@ -177,12 +214,7 @@ impl Application for App {
                 }
                 Command::none()
             }
-            AppMessage::List(list) => {
-                self.choosed_index = 0;
-                self.scroll_area = (0, self.win_size.height as usize - 80);
-                self.list = list;
-                Command::none()
-            }
+            AppMessage::List(list) => self.select.update(list.list),
             AppMessage::Push(idx) => {
                 self.run_app(qst_comm::ExecHint {
                     name: self.list.list[idx].name.clone(),
@@ -223,63 +255,8 @@ impl Application for App {
             AppMessage::UserEvent(e) => match e {
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
-                        iced::keyboard::KeyCode::Down => {
-                            log::trace("Pressed down");
-                            if self.choosed_index < self.list.list.len() {
-                                self.choosed_index += 1;
-                                let minscrollend = self.choosed_index * 35 - 5;
-                                log::trace(format!("minscrollend: {}", minscrollend).as_str());
-                                if minscrollend > self.scroll_area.1 as usize {
-                                    let scrolloff = minscrollend - self.scroll_area.1;
-                                    log::trace(
-                                        format!("Scroll to down with offset {}", scrolloff)
-                                            .as_str(),
-                                    );
-                                    self.scroll_area =
-                                        (self.scroll_area.0 + scrolloff, minscrollend);
-                                    let all = ((self.list.list.len() * 35)
-                                        - 5
-                                        - (self.scroll_area.1 - self.scroll_area.0))
-                                        as f32;
-                                    return widget::scrollable::snap_to(
-                                        widget::scrollable::Id::new("s0"),
-                                        widget::scrollable::RelativeOffset {
-                                            x: 0.0,
-                                            y: self.scroll_area.0 as f32 / all,
-                                        },
-                                    );
-                                }
-                            }
-                            Command::none()
-                        }
-                        iced::keyboard::KeyCode::Up => {
-                            log::trace("Pressed up");
-                            if self.choosed_index > 1 {
-                                self.choosed_index -= 1;
-                                let minscrollbegin = (self.choosed_index - 1) * 35;
-                                log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
-                                if minscrollbegin < self.scroll_area.0 {
-                                    let scrolloff = self.scroll_area.0 - minscrollbegin;
-                                    log::trace(
-                                        format!("Scroll to up with offset {}", scrolloff).as_str(),
-                                    );
-                                    self.scroll_area =
-                                        (minscrollbegin, self.scroll_area.1 - scrolloff);
-                                    let all = ((self.list.list.len() * 35)
-                                        - 5
-                                        - (self.scroll_area.1 - self.scroll_area.0))
-                                        as f32;
-                                    return widget::scrollable::snap_to(
-                                        widget::scrollable::Id::new("s0"),
-                                        widget::scrollable::RelativeOffset {
-                                            x: 0.0,
-                                            y: self.scroll_area.0 as f32 / all,
-                                        },
-                                    );
-                                }
-                            }
-                            Command::none()
-                        }
+                        iced::keyboard::KeyCode::Down => self.select.down(),
+                        iced::keyboard::KeyCode::Up => self.select.up(),
                         _ => Command::none(),
                     }
                 }
@@ -287,9 +264,9 @@ impl Application for App {
                 _ => Command::none(),
             },
             AppMessage::Submit => {
-                if self.choosed_index > 0 {
+                if let Some(d) = self.select.selected() {
                     self.run_app(qst_comm::ExecHint {
-                        name: self.list.list[self.choosed_index - 1].name.clone(),
+                        name: d.name.clone(),
                         file: None,
                         url: None,
                     });
@@ -300,13 +277,21 @@ impl Application for App {
     }
     fn subscription(&self) -> Subscription<AppMessage> {
         struct SomeSub;
+        enum WorkState {
+            Normal,
+            TrySend(AppMessage),
+        }
+        enum State {
+            Starting,
+            Working(comm::Comm, WorkState),
+        }
         Subscription::batch([
             iced_futures::subscription::events()
                 .map(AppMessage::UserEvent)
                 .into(),
             subscription::channel(
                 std::any::TypeId::of::<SomeSub>(),
-                100,
+                1000,
                 |mut output| async move {
                     let mut state = State::Starting;
 
@@ -315,20 +300,41 @@ impl Application for App {
                         match &mut state {
                             State::Starting => {
                                 // Create channel
-                                let (sender, receiver) = mpsc::channel(100);
+                                let (sender, receiver) = mpsc::channel(1000);
 
                                 // Send the sender back to the application
-                                output.send(AppMessage::Ready(sender)).await;
-
-                                // We are ready to receive messages
-                                state = State::Ready(comm::Comm::new(receiver));
-                            }
-                            State::Ready(comm) => {
-                                // Read next input sent from `Application`
-                                if let Some(msg) = comm.next().await {
-                                    output.send(msg).await;
+                                // let _ = output.send(AppMessage::Ready(sender)).await;
+                                if let Err(e) = output
+                                    .send(
+                                        // AppMessage::Ready(sender)
+                                        AppMessage::OnConnect(ConnectMessage::S2uReady(sender)),
+                                    )
+                                    .await
+                                {
+                                    log::warn(format!("send ready failed: {:?}", e).as_str());
+                                } else {
+                                    // We are ready to receive messages
+                                    state = State::Working(
+                                        comm::Comm::new(receiver),
+                                        WorkState::Normal,
+                                    );
                                 }
                             }
+                            State::Working(comm, state) => match state {
+                                WorkState::Normal => {
+                                    // Read next input sent from `Application`
+                                    if let Some(msg) = comm.next().await {
+                                        *state = WorkState::TrySend(msg);
+                                    }
+                                }
+                                WorkState::TrySend(msg) => {
+                                    if let Err(e) = output.send(msg.clone()).await {
+                                        log::warn(format!("send failed: {:?}", e).as_str());
+                                    } else {
+                                        *state = WorkState::Normal;
+                                    }
+                                }
+                            },
                         }
                     }
                 },
@@ -337,37 +343,19 @@ impl Application for App {
         ])
     }
     fn view(&self) -> Element<AppMessage> {
-        use iced::widget::text_input::Id;
         let input = widget::text_input("", self.input.as_str())
             .line_height(widget::text::LineHeight::Absolute(iced::Pixels(30.0)))
             .on_input(AppMessage::Input)
             .on_submit(AppMessage::Submit)
-            .id(Id::new("0"));
-        let list = self
-            .list
-            .list
-            .iter()
-            .enumerate()
-            .map(|(i, r)| {
-                widget::button(widget::text(r.name.as_str()))
-                    .width(Length::Fill)
-                    .height(35)
-                    .on_press(AppMessage::Push(i))
-                    .style(if i + 1 == self.choosed_index {
-                        theme::Button::Primary
-                    } else {
-                        theme::Button::Secondary
-                    })
-                    .into()
-            })
-            .collect::<Vec<_>>();
-        let list = widget::scrollable(Column::with_children(list).spacing(5))
-            .id(widget::scrollable::Id::new("s0"));
+            .id(text_input::Id::new("i0"));
         // .direction(
         //     widget::scrollable::Direction::Vertical(),
         //     widget::scrollable::Properties::new().
         // );
-        column!(input, list).spacing(5).padding(5).into()
+        column!(input, self.select.view())
+            .spacing(5)
+            .padding(5)
+            .into()
         // let available_list = widget::pick_list(
         //     &self.available_ports,
         //     self.choosed.clone(),

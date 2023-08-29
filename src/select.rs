@@ -1,11 +1,169 @@
+use std::fmt::Display;
+
 use crate::comm::qst_comm;
-use iced::widget::scrollable;
+use crate::ui::AppMessage;
+use iced::widget::{scrollable, Column};
+use iced::{theme, widget, Length};
+use xlog_rs::log;
 const id: &str = "s0";
-const button_width: u16 = 30;
-const spacing: u16 = 10;
+const button_width: u32 = 30;
+const spacing: u32 = 10;
 
 pub struct Select {
     pub id: scrollable::Id,
     pub apps: Vec<qst_comm::Display>,
-    chosen_index: usize,
+    selected_index: usize,
+    height: u32,
+    scroll_start: u32,
+}
+impl Select {
+    pub fn new() -> Self {
+        Self {
+            id: scrollable::Id::new(id),
+            apps: vec![],
+            selected_index: 0,
+            height: 0,
+            scroll_start: 0,
+        }
+    }
+    pub fn with_height(height: u32) -> Self {
+        Self {
+            id: scrollable::Id::new(id),
+            apps: vec![],
+            selected_index: 0,
+            height,
+            scroll_start: 0,
+        }
+    }
+    pub fn update(&mut self, apps: Vec<qst_comm::Display>) -> iced::Command<crate::ui::AppMessage> {
+        self.apps = apps;
+        self.selected_index = 0;
+        scrollable::snap_to(self.id.clone(), scrollable::RelativeOffset::START)
+    }
+    pub fn app(&self, index: usize) -> Option<&qst_comm::Display> {
+        self.apps.get(index)
+    }
+    pub fn has_selected(&self) -> bool {
+        self.selected_index != 0
+    }
+    fn check_scroll(&mut self) -> iced::Command<crate::ui::AppMessage> {
+        let mut check_need = || {
+            let mut minscroll = self.selected_index as u32 * (button_width + spacing) - spacing;
+            log::trace(format!("minscrollend: {}", minscroll).as_str());
+            if minscroll > self.scroll_start + self.height {
+                self.scroll_start = minscroll - self.height;
+                return true;
+            }
+            minscroll = (self.selected_index as u32 - 1) * (button_width + spacing);
+            log::trace(format!("minscrollbegin: {}", minscroll).as_str());
+            if minscroll < self.scroll_start {
+                self.scroll_start = minscroll;
+                return true;
+            }
+            false
+        };
+        if check_need() {
+            let all = ((self.apps.len() * (button_width + spacing) as usize)
+                - (spacing + self.height) as usize) as f32;
+            scrollable::snap_to(
+                self.id.clone(),
+                scrollable::RelativeOffset {
+                    x: 0.0,
+                    y: self.scroll_start as f32 / all,
+                },
+            )
+        } else {
+            iced::Command::none()
+        }
+    }
+    pub fn down(&mut self) -> iced::Command<crate::ui::AppMessage> {
+        log::trace("Pressed down");
+        if self.selected_index < self.apps.len() {
+            self.selected_index += 1;
+            self.check_scroll()
+        } else {
+            iced::Command::none()
+        }
+    }
+    // iced::keyboard::KeyCode::Up => {
+    //     log::trace("Pressed up");
+    //     if self.choosed_index > 1 {
+    //         self.choosed_index -= 1;
+    //         let minscrollbegin = (self.choosed_index - 1) * 35;
+    //         log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
+    //         if minscrollbegin < self.scroll_area.0 {
+    //             let scrolloff = self.scroll_area.0 - minscrollbegin;
+    //             log::trace(
+    //                 format!("Scroll to up with offset {}", scrolloff).as_str(),
+    //             );
+    //             self.scroll_area =
+    //                 (minscrollbegin, self.scroll_area.1 - scrolloff);
+    //             let all = ((self.list.list.len() * 35)
+    //                 - 5
+    //                 - (self.scroll_area.1 - self.scroll_area.0))
+    //                 as f32;
+    //             return widget::scrollable::snap_to(
+    //                 widget::scrollable::Id::new("s0"),
+    //                 widget::scrollable::RelativeOffset {
+    //                     x: 0.0,
+    //                     y: self.scroll_area.0 as f32 / all,
+    //                 },
+    //             );
+    //         }
+    //     }
+    //     Command::none()
+    // }
+    pub fn up(&mut self) -> iced::Command<crate::ui::AppMessage> {
+        log::trace("Pressed up");
+        if self.selected_index > 1 {
+            self.selected_index -= 1;
+            let minscrollbegin = (self.selected_index as u32 - 1) * (button_width + spacing);
+            log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
+            if minscrollbegin < self.scroll_start {
+                self.scroll_start = minscrollbegin;
+                let all = ((self.apps.len() * (button_width + spacing) as usize)
+                    - (spacing + self.height) as usize) as f32;
+                return scrollable::snap_to(
+                    self.id.clone(),
+                    scrollable::RelativeOffset {
+                        x: 0.0,
+                        y: self.scroll_start as f32 / all,
+                    },
+                );
+            }
+        }
+        iced::Command::none()
+    }
+    pub fn selected(&self) -> Option<&qst_comm::Display> {
+        if self.selected_index == 0 {
+            None
+        } else {
+            self.apps.get((self.selected_index - 1) as usize)
+        }
+    }
+    pub fn selected_index(&self) -> usize {
+        self.selected_index
+    }
+    pub fn view(&self) -> iced::Element<crate::ui::AppMessage> {
+        let list = self
+            .apps
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                widget::button(widget::text(r.name.as_str()))
+                    .width(Length::Fill)
+                    .height(35)
+                    .on_press(AppMessage::Push(i))
+                    .style(if i + 1 == self.selected_index {
+                        theme::Button::Primary
+                    } else {
+                        theme::Button::Secondary
+                    })
+                    .into()
+            })
+            .collect::<Vec<_>>();
+        widget::scrollable(Column::with_children(list).spacing(5))
+            .id(self.id.clone())
+            .into()
+    }
 }
