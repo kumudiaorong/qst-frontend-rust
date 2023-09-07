@@ -1,5 +1,6 @@
 use std::fmt::format;
 
+use crate::comm::qst_comm::DisplayList;
 use crate::comm::{self, qst_comm};
 use crate::select;
 use iced::widget::text_input;
@@ -205,14 +206,20 @@ impl Application for App {
             AppMessage::Empty => Command::none(),
             AppMessage::Input(input) => {
                 self.input = input;
-                if self.is_connected {
+                if self.input.is_empty() {
+                    iced::Command::perform(async move {}, |_| {
+                        AppMessage::List(DisplayList::default())
+                    })
+                } else if self.is_connected {
                     if let Err(e) = self.try_send(comm::Event::InputChanged(qst_comm::Input {
                         str: self.input.clone(),
                     })) {
                         log::warn(format!("input failed: {:?}", e).as_str());
                     }
+                    Command::none()
+                } else {
+                    Command::none()
                 }
-                Command::none()
             }
             AppMessage::List(list) => self.select.update(list.list),
             AppMessage::Push(idx) => {
