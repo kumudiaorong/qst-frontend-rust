@@ -10,6 +10,7 @@ pub enum Event {
     Connect(String),
     InputChanged(qst_comm::Input),
     RunApp(qst_comm::ExecHint),
+    Over,
 }
 
 pub struct Comm {
@@ -58,7 +59,9 @@ impl Comm {
                     }
                 }
                 self.connect_try = 0;
-                return Some(AppMessage::OnConnect(crate::ui::ConnectMessage::Connected));
+                return Some(AppMessage::OnConnect(
+                    crate::ui::ConnectMessage::C2uConnected,
+                ));
             }
             Event::InputChanged(input) => {
                 if let Some(ref mut cli) = self.cli {
@@ -73,6 +76,13 @@ impl Comm {
                         return Some(AppMessage::RunSuccess);
                     }
                 }
+            }
+            Event::Over => {
+                self.cli = None;
+                self.rx.close();
+                return Some(AppMessage::OnConnect(
+                    crate::ui::ConnectMessage::C2uDisconnected,
+                ));
             }
         }
         None

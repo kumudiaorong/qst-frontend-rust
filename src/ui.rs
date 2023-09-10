@@ -31,7 +31,8 @@ pub enum ConnectMessage {
     S2uReady(mpsc::Sender<comm::Event>),
     U2cTrySendConnect,
     C2uConnectFailed(Error),
-    Connected,
+    C2uConnected,
+    C2uDisconnected,
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +158,7 @@ impl Application for App {
     }
 
     fn title(&self) -> String {
-        String::from("Rating")
+        String::from("Qst")
     }
 
     fn update(&mut self, message: AppMessage) -> Command<AppMessage> {
@@ -167,7 +168,7 @@ impl Application for App {
                     self.tx = Some(tx);
                     iced::Command::perform(
                         async move {
-                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         },
                         |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
                     )
@@ -177,7 +178,7 @@ impl Application for App {
                         log::warn(format!("send connect failed: {:?}", e).as_str());
                         iced::Command::perform(
                             async move {
-                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             },
                             |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
                         )
@@ -185,7 +186,7 @@ impl Application for App {
                         widget::text_input::focus(text_input::Id::new("i0"))
                     }
                 }
-                ConnectMessage::Connected => {
+                ConnectMessage::C2uConnected => {
                     self.is_connected = true;
                     Command::none()
                 }
@@ -193,10 +194,15 @@ impl Application for App {
                     log::warn(format!("connect failed: {:?}", e).as_str());
                     iced::Command::perform(
                         async move {
-                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         },
                         |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
                     )
+                }
+                ConnectMessage::C2uDisconnected => {
+                    self.is_connected = false;
+                    log::trace("disconnected");
+                    window::close()
                 }
             },
             AppMessage::Error(msg) => {
@@ -267,6 +273,13 @@ impl Application for App {
                         _ => Command::none(),
                     }
                 }
+                // iced::Event::Window(iced::window::Event::CloseRequested) => {
+                //     log::trace("close requested");
+                //     if let Err(e) = self.try_send(comm::Event::Over) {
+                //         log::warn(format!("input failed: {:?}", e).as_str());
+                //     }
+                //     Command::none()
+                // }
                 // iced::Event::Window(iced::window::Event::Resized { width, height }
                 _ => Command::none(),
             },
@@ -291,6 +304,7 @@ impl Application for App {
         enum State {
             Starting,
             Working(comm::Comm, WorkState),
+            Over,
         }
         Subscription::batch([
             iced_futures::subscription::events()
@@ -327,21 +341,38 @@ impl Application for App {
                                     );
                                 }
                             }
-                            State::Working(comm, state) => match state {
+                            State::Working(comm, wstate) => match wstate {
                                 WorkState::Normal => {
                                     // Read next input sent from `Application`
                                     if let Some(msg) = comm.next().await {
-                                        *state = WorkState::TrySend(msg);
+                                        *wstate = WorkState::TrySend(msg);
                                     }
                                 }
                                 WorkState::TrySend(msg) => {
                                     if let Err(e) = output.send(msg.clone()).await {
                                         log::warn(format!("send failed: {:?}", e).as_str());
                                     } else {
-                                        *state = WorkState::Normal;
+                                        match msg {
+                                            AppMessage::OnConnect(
+                                                ConnectMessage::C2uDisconnected,
+                                            ) => {
+                                                if let Err(e) = output.close().await {
+                                                    log::warn(
+                                                        format!("close failed: {:?}", e).as_str(),
+                                                    );
+                                                }
+                                                state = State::Over;
+                                            }
+                                            _ => {
+                                                *wstate = WorkState::Normal;
+                                            }
+                                        }
                                     }
                                 }
                             },
+                            State::Over => {
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
                         }
                     }
                 },
