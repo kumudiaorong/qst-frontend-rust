@@ -1,11 +1,12 @@
-use iced::Application;
 use qst_front_end::ui;
 
+use iced::Application;
+
 fn main() -> iced::Result {
+    let args: Vec<String> = std::env::args().collect();
     xlog_rs::log::init(std::io::stdout());
     xlog_rs::log::set_level(xlog_rs::log::Level::Trace);
-    let settings =
-        iced::Settings::with_flags(ui::Flags::new(vec!["http://127.0.0.1:50051".to_string()]));
+    let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect()));
     ui::App::run(settings)
     // let mut c = Comm::new("127.0.0.1:50051".to_string()).await;
     // loop {

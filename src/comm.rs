@@ -10,7 +10,6 @@ pub enum Event {
     Connect(String),
     InputChanged(qst_comm::Input),
     RunApp(qst_comm::ExecHint),
-    Over,
 }
 
 pub struct Comm {
@@ -76,13 +75,6 @@ impl Comm {
                         return Some(AppMessage::RunSuccess);
                     }
                 }
-            }
-            Event::Over => {
-                self.cli = None;
-                self.rx.close();
-                return Some(AppMessage::OnConnect(
-                    crate::ui::ConnectMessage::C2uDisconnected,
-                ));
             }
         }
         None

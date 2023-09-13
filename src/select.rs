@@ -1,13 +1,11 @@
-use std::fmt::Display;
-
 use crate::comm::qst_comm;
 use crate::ui::AppMessage;
 use iced::widget::{scrollable, Column};
 use iced::{theme, widget, Length};
 use xlog_rs::log;
-const id: &str = "s0";
-const button_width: u32 = 30;
-const spacing: u32 = 10;
+const SELECT_ID: &str = "s0";
+const BUTTON_WIDTH: u32 = 30;
+const SPACING: u32 = 10;
 
 pub struct Select {
     pub id: scrollable::Id,
@@ -19,7 +17,7 @@ pub struct Select {
 impl Select {
     pub fn new() -> Self {
         Self {
-            id: scrollable::Id::new(id),
+            id: scrollable::Id::new(SELECT_ID),
             apps: vec![],
             selected_index: 0,
             height: 0,
@@ -28,7 +26,7 @@ impl Select {
     }
     pub fn with_height(height: u32) -> Self {
         Self {
-            id: scrollable::Id::new(id),
+            id: scrollable::Id::new(SELECT_ID),
             apps: vec![],
             selected_index: 0,
             height,
@@ -48,13 +46,13 @@ impl Select {
     }
     fn check_scroll(&mut self) -> iced::Command<crate::ui::AppMessage> {
         let mut check_need = || {
-            let mut minscroll = self.selected_index as u32 * (button_width + spacing) - spacing;
+            let mut minscroll = self.selected_index as u32 * (BUTTON_WIDTH + SPACING) - SPACING;
             log::trace(format!("minscrollend: {}", minscroll).as_str());
             if minscroll > self.scroll_start + self.height {
                 self.scroll_start = minscroll - self.height;
                 return true;
             }
-            minscroll = (self.selected_index as u32 - 1) * (button_width + spacing);
+            minscroll = (self.selected_index as u32 - 1) * (BUTTON_WIDTH + SPACING);
             log::trace(format!("minscrollbegin: {}", minscroll).as_str());
             if minscroll < self.scroll_start {
                 self.scroll_start = minscroll;
@@ -63,8 +61,8 @@ impl Select {
             false
         };
         if check_need() {
-            let all = ((self.apps.len() * (button_width + spacing) as usize)
-                - (spacing + self.height) as usize) as f32;
+            let all = ((self.apps.len() * (BUTTON_WIDTH + SPACING) as usize)
+                - (SPACING + self.height) as usize) as f32;
             scrollable::snap_to(
                 self.id.clone(),
                 scrollable::RelativeOffset {
@@ -117,12 +115,12 @@ impl Select {
         log::trace("Pressed up");
         if self.selected_index > 1 {
             self.selected_index -= 1;
-            let minscrollbegin = (self.selected_index as u32 - 1) * (button_width + spacing);
+            let minscrollbegin = (self.selected_index as u32 - 1) * (BUTTON_WIDTH + SPACING);
             log::trace(format!("minscrollbegin: {}", minscrollbegin).as_str());
             if minscrollbegin < self.scroll_start {
                 self.scroll_start = minscrollbegin;
-                let all = ((self.apps.len() * (button_width + spacing) as usize)
-                    - (spacing + self.height) as usize) as f32;
+                let all = ((self.apps.len() * (BUTTON_WIDTH + SPACING) as usize)
+                    - (SPACING + self.height) as usize) as f32;
                 return scrollable::snap_to(
                     self.id.clone(),
                     scrollable::RelativeOffset {
@@ -150,8 +148,12 @@ impl Select {
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                widget::button(widget::text(r.name.as_str()))
-                    .width(Length::Fill)
+                log::warn(format!("button: {}", r.name).as_str());
+                // let t = widget::text(r.name.as_str());
+                // println!("button: {:#?}", t);
+                // widget::text(t)
+                widget::button("Visual Studio Code+")
+                    .width(Length::Fixed(300.0)) //bug
                     .height(35)
                     .on_press(AppMessage::Push(i))
                     .style(if i + 1 == self.selected_index {

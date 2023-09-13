@@ -1,16 +1,9 @@
-use std::fmt::format;
-
 use crate::comm::qst_comm::DisplayList;
 use crate::comm::{self, qst_comm};
 use crate::select;
 use iced::widget::text_input;
-use iced::widget::text_input::focus;
-use iced::widget::{self, column, row, Column, Row};
-use iced::{
-    alignment, executor, theme, window, Application, Command, Element, Length, Size, Subscription,
-    Theme,
-};
-use iced_futures::core::widget::operation::focusable::{focus_next, focus_previous};
+use iced::widget::{self, column};
+use iced::{executor, window, Application, Command, Element, Size, Subscription, Theme};
 use iced_futures::futures::channel::mpsc;
 use iced_futures::subscription;
 use xlog_rs::log;
@@ -51,8 +44,19 @@ pub struct Flags {
     addr: String,
 }
 impl Flags {
-    pub fn new(addr: String) -> Self {
-        Self { addr }
+    pub fn new(args: Vec<String>) -> Self {
+        for (i, arg) in args.iter().enumerate() {
+            if arg == "--addr" {
+                if i + 1 < args.len() {
+                    return Self {
+                        addr: "http://".to_string() + args[i + 1].as_str(),
+                    };
+                }
+            }
+        }
+        Self {
+            addr: "".to_string(),
+        }
     }
 }
 pub struct App {
@@ -64,60 +68,7 @@ pub struct App {
     select: select::Select,
     win_size: iced::Size<u32>,
 }
-impl App {
-    // fn send<T: Message>(&mut self, msg: T, err: &str) -> bool {
-    //     match self.sender.send(msg.encode_to_vec()) {
-    //         Ok(_) => true,
-    //         Err(_) => {
-    //             logger::warn(err);
-    //             false
-    //         }
-    //     }
-    // }
-    // fn send_header(&mut self, tp: MsgType, err: &str) -> bool {
-    //     self.send(MsgHeader::new(tp), err)
-    // }
-    // fn call(&mut self) {
-    //     if let Some(path) = &self.choosed {
-    //         self.send(msg::Port::new(path.clone()), "send path request failed")
-    //             .then(|| {
-    //                 self.send_header(MsgType::Right, "send right request failed")
-    //                     .then(|| self.send_header(MsgType::Query, "send query request failed"))
-    //             });
-    //     }
-    // }
-    // fn open(&mut self) {
-    //     if self.is_open {
-    //         self.send_header(MsgType::Close, "send close request failed")
-    //             .then(|| self.is_open = false);
-    //     } else if self.choosed.is_some() {
-    //         let _ = self
-    //             .send_header(MsgType::Open, "send open request failed")
-    //             .then(|| {
-    //                 self.is_open = true;
-    //                 self.call()
-    //             });
-    //     }
-    // }
-    // fn proc_ticks(&mut self) {
-    //     self.available_ports = config::available_ports();
-    //     if let Ok(rcev) = self.receiver.try_recv() {
-    //         if let Ok(h) = MsgHeader::decode(rcev.as_slice()) {
-    //             match h.tp() {
-    //                 MsgType::Query => {
-    //                     if let Ok(rcev) = self.receiver.recv() {
-    //                         if let Ok(rl) = msg::RateList::decode(rcev.as_slice()) {
-    //                             self.ratelist = rl;
-    //                             self.ratelist.rates.sort_by(|l, r| l.addr.cmp(&r.addr));
-    //                         }
-    //                     }
-    //                 }
-    //                 _ => (),
-    //             }
-    //         }
-    //     }
-    // }
-}
+
 const WIN_INIT_SIZE: iced::Size<u32> = Size {
     width: 300,
     height: 245,
@@ -143,6 +94,7 @@ impl Application for App {
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<AppMessage>) {
+        log::trace(format!("addr: {}", flags.addr).as_str());
         (
             Self {
                 tx: None,
@@ -227,7 +179,10 @@ impl Application for App {
                     Command::none()
                 }
             }
-            AppMessage::List(list) => self.select.update(list.list),
+            AppMessage::List(list) => {
+                println!("list: {:?}", list);
+                self.select.update(list.list)
+            }
             AppMessage::Push(idx) => {
                 self.run_app(qst_comm::ExecHint {
                     name: self.list.list[idx].name.clone(),
@@ -235,36 +190,8 @@ impl Application for App {
                     url: None,
                 });
                 Command::none()
-            } // AppMessage::Tick => self.proc_ticks(),
-            // AppMessage::OpenSerial => self.open(),
-            // AppMessage::ReSet => {
-            //     self.send_header(MsgType::Reset, "send reset request failed");
-            // }
-            // AppMessage::ReCheck => {
-            //     self.send_header(MsgType::Right, "send right request failed");
-            // }
-            // AppMessage::ReQuery => {
-            //     self.ratelist.clear();
-            //     self.send_header(MsgType::Next, "send query request failed");
-            //     self.send_header(MsgType::Query, "send query request failed");
-            // }
-            // AppMessage::Save => self.config.save(),
-            // AppMessage::Apply => {
-            //     self.send_header(MsgType::Reload, "send load request failed")
-            //         .then(|| self.call());
-            // }
-            // AppMessage::PortSelected(path) => self.choosed = Some(path),
-            // AppMessage::CfgBaudRate(rate) => self.config.baud_rate = rate,
-            // AppMessage::CfgTimeout(timeout) => {
-            //     self.config.timeout = timeout.parse().unwrap_or(self.config.timeout)
-            // }
-            // AppMessage::CfgMaxDev(max_dev) => {
-            //     self.config.max_dev = max_dev.parse().unwrap_or(self.config.max_dev)
-            // }
-            // AppMessage::CfgTryCnt(try_cnt) => {
-            //     self.config.try_cnt = try_cnt.parse().unwrap_or(self.config.try_cnt)
-            // }
-            AppMessage::RunSuccess => Command::none(),
+            }
+            AppMessage::RunSuccess => window::close(),
             AppMessage::UserEvent(e) => match e {
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
@@ -304,7 +231,6 @@ impl Application for App {
         enum State {
             Starting,
             Working(comm::Comm, WorkState),
-            Over,
         }
         Subscription::batch([
             iced_futures::subscription::events()
@@ -315,7 +241,6 @@ impl Application for App {
                 1000,
                 |mut output| async move {
                     let mut state = State::Starting;
-
                     loop {
                         use iced_futures::futures::sink::SinkExt;
                         match &mut state {
@@ -352,27 +277,10 @@ impl Application for App {
                                     if let Err(e) = output.send(msg.clone()).await {
                                         log::warn(format!("send failed: {:?}", e).as_str());
                                     } else {
-                                        match msg {
-                                            AppMessage::OnConnect(
-                                                ConnectMessage::C2uDisconnected,
-                                            ) => {
-                                                if let Err(e) = output.close().await {
-                                                    log::warn(
-                                                        format!("close failed: {:?}", e).as_str(),
-                                                    );
-                                                }
-                                                state = State::Over;
-                                            }
-                                            _ => {
-                                                *wstate = WorkState::Normal;
-                                            }
-                                        }
+                                        *wstate = WorkState::Normal;
                                     }
                                 }
                             },
-                            State::Over => {
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            }
                         }
                     }
                 },
