@@ -3,7 +3,6 @@ use qst_front_end::ui;
 use iced::Application;
 
 fn main() -> iced::Result {
-    let args: Vec<String> = std::env::args().collect();
     xlog_rs::log::init(std::io::stdout());
     xlog_rs::log::set_level(xlog_rs::log::Level::Trace);
     let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect()));

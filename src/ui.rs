@@ -3,11 +3,13 @@ use crate::comm::{self, qst_comm};
 use crate::select;
 use iced::widget::text_input;
 use iced::widget::{self, column};
-use iced::{executor, window, Application, Command, Element, Size, Subscription, Theme};
+use iced::{executor, window, Application, Command, Element, Length, Size, Subscription, Theme};
 use iced_futures::futures::channel::mpsc;
 use iced_futures::subscription;
 use xlog_rs::log;
-
+pub const SPACING: u16 = 5;
+pub const PADDING: u16 = 5;
+pub const TEXT_WIDTH: u16 = 35;
 #[derive(Debug, Clone)]
 pub struct Error {
     msg: String,
@@ -21,7 +23,7 @@ impl Error {
 }
 #[derive(Debug, Clone)]
 pub enum ConnectMessage {
-    S2uReady(mpsc::Sender<comm::Event>),
+    S2uReady(mpsc::Sender<comm::Request>),
     U2cTrySendConnect,
     C2uConnectFailed(Error),
     C2uConnected,
@@ -62,7 +64,7 @@ impl Flags {
 pub struct App {
     input: String,
     list: qst_comm::DisplayList,
-    tx: Option<mpsc::Sender<comm::Event>>,
+    tx: Option<mpsc::Sender<comm::Request>>,
     is_connected: bool,
     addr: String,
     select: select::Select,
@@ -75,12 +77,12 @@ const WIN_INIT_SIZE: iced::Size<u32> = Size {
 };
 
 impl App {
-    fn try_send(&mut self, event: comm::Event) -> Result<(), mpsc::TrySendError<comm::Event>> {
-        self.tx.as_mut().unwrap().try_send(event)
+    fn try_send(&mut self, req: comm::Request) -> Result<(), mpsc::TrySendError<comm::Request>> {
+        self.tx.as_mut().unwrap().try_send(req)
     }
-    fn run_app(&mut self, eh: qst_comm::ExecHint) {
+    fn run_app(&mut self, req: comm::Request) {
         if self.is_connected {
-            if let Err(e) = self.try_send(comm::Event::RunApp(eh)) {
+            if let Err(e) = self.try_send(req) {
                 log::warn(format!("run app failed: {:?}", e).as_str());
             }
         }
@@ -93,7 +95,7 @@ impl Application for App {
     type Theme = Theme;
     type Flags = Flags;
 
-    fn new(flags: Self::Flags) -> (Self, Command<AppMessage>) {
+    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         log::trace(format!("addr: {}", flags.addr).as_str());
         (
             Self {
@@ -102,7 +104,12 @@ impl Application for App {
                 input: String::new(),
                 list: qst_comm::DisplayList::default(),
                 addr: flags.addr,
-                select: select::Select::with_height(WIN_INIT_SIZE.height - 80),
+                select: select::Select::with_height(
+                    WIN_INIT_SIZE.height as u16
+                        - (TEXT_WIDTH + SPACING * 2)
+                        - (PADDING * 2)
+                        - SPACING,
+                ),
                 win_size: WIN_INIT_SIZE,
             },
             window::resize(WIN_INIT_SIZE),
@@ -113,26 +120,26 @@ impl Application for App {
         String::from("Qst")
     }
 
-    fn update(&mut self, message: AppMessage) -> Command<AppMessage> {
+    fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            AppMessage::OnConnect(cmsg) => match cmsg {
+            Self::Message::OnConnect(cmsg) => match cmsg {
                 ConnectMessage::S2uReady(tx) => {
                     self.tx = Some(tx);
                     iced::Command::perform(
                         async move {
                             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                         },
-                        |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                        |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
                     )
                 }
                 ConnectMessage::U2cTrySendConnect => {
-                    if let Err(e) = self.try_send(comm::Event::Connect(self.addr.clone())) {
+                    if let Err(e) = self.try_send(comm::Request::Connect(self.addr.clone())) {
                         log::warn(format!("send connect failed: {:?}", e).as_str());
                         iced::Command::perform(
                             async move {
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             },
-                            |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                            |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
                         )
                     } else {
                         widget::text_input::focus(text_input::Id::new("i0"))
@@ -148,7 +155,7 @@ impl Application for App {
                         async move {
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         },
-                        |_| AppMessage::OnConnect(ConnectMessage::U2cTrySendConnect),
+                        |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
                     )
                 }
                 ConnectMessage::C2uDisconnected => {
@@ -157,21 +164,19 @@ impl Application for App {
                     window::close()
                 }
             },
-            AppMessage::Error(msg) => {
+            Self::Message::Error(msg) => {
                 println!("error: {}", msg);
                 Command::none()
             }
-            AppMessage::Empty => Command::none(),
-            AppMessage::Input(input) => {
+            Self::Message::Empty => Command::none(),
+            Self::Message::Input(input) => {
                 self.input = input;
                 if self.input.is_empty() {
                     iced::Command::perform(async move {}, |_| {
-                        AppMessage::List(DisplayList::default())
+                        Self::Message::List(DisplayList::default())
                     })
                 } else if self.is_connected {
-                    if let Err(e) = self.try_send(comm::Event::InputChanged(qst_comm::Input {
-                        str: self.input.clone(),
-                    })) {
+                    if let Err(e) = self.try_send(comm::Request::Search(self.input.clone())) {
                         log::warn(format!("input failed: {:?}", e).as_str());
                     }
                     Command::none()
@@ -179,20 +184,13 @@ impl Application for App {
                     Command::none()
                 }
             }
-            AppMessage::List(list) => {
-                println!("list: {:?}", list);
-                self.select.update(list.list)
-            }
-            AppMessage::Push(idx) => {
-                self.run_app(qst_comm::ExecHint {
-                    name: self.list.list[idx].name.clone(),
-                    file: None,
-                    url: None,
-                });
+            Self::Message::List(list) => self.select.update(list.list),
+            Self::Message::Push(idx) => {
+                self.run_app(comm::Request::RunApp(self.list.list[idx].name.clone()));
                 Command::none()
             }
-            AppMessage::RunSuccess => window::close(),
-            AppMessage::UserEvent(e) => match e {
+            Self::Message::RunSuccess => window::close(),
+            Self::Message::UserEvent(e) => match e {
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
                         iced::keyboard::KeyCode::Down => self.select.down(),
@@ -210,19 +208,15 @@ impl Application for App {
                 // iced::Event::Window(iced::window::Event::Resized { width, height }
                 _ => Command::none(),
             },
-            AppMessage::Submit => {
+            Self::Message::Submit => {
                 if let Some(d) = self.select.selected() {
-                    self.run_app(qst_comm::ExecHint {
-                        name: d.name.clone(),
-                        file: None,
-                        url: None,
-                    });
+                    self.run_app(comm::Request::RunApp(d.name.clone()));
                 }
                 Command::none()
             }
         }
     }
-    fn subscription(&self) -> Subscription<AppMessage> {
+    fn subscription(&self) -> Subscription<Self::Message> {
         struct SomeSub;
         enum WorkState {
             Normal,
@@ -234,7 +228,7 @@ impl Application for App {
         }
         Subscription::batch([
             iced_futures::subscription::events()
-                .map(AppMessage::UserEvent)
+                .map(Self::Message::UserEvent)
                 .into(),
             subscription::channel(
                 std::any::TypeId::of::<SomeSub>(),
@@ -249,11 +243,11 @@ impl Application for App {
                                 let (sender, receiver) = mpsc::channel(1000);
 
                                 // Send the sender back to the application
-                                // let _ = output.send(AppMessage::Ready(sender)).await;
+                                // let _ = output.send(Self::Message::Ready(sender)).await;
                                 if let Err(e) = output
                                     .send(
-                                        // AppMessage::Ready(sender)
-                                        AppMessage::OnConnect(ConnectMessage::S2uReady(sender)),
+                                        // Self::Message::Ready(sender)
+                                        Self::Message::OnConnect(ConnectMessage::S2uReady(sender)),
                                     )
                                     .await
                                 {
@@ -288,24 +282,28 @@ impl Application for App {
             .into(),
         ])
     }
-    fn view(&self) -> Element<AppMessage> {
+    fn view(&self) -> Element<Self::Message> {
         let input = widget::text_input("", self.input.as_str())
-            .line_height(widget::text::LineHeight::Absolute(iced::Pixels(30.0)))
-            .on_input(AppMessage::Input)
-            .on_submit(AppMessage::Submit)
+            .line_height(widget::text::LineHeight::Absolute(iced::Pixels(
+                TEXT_WIDTH as f32,
+            )))
+            .padding(PADDING)
+            .on_input(Self::Message::Input)
+            .width(Length::Fill)
+            .on_submit(Self::Message::Submit)
             .id(text_input::Id::new("i0"));
         // .direction(
         //     widget::scrollable::Direction::Vertical(),
         //     widget::scrollable::Properties::new().
         // );
         column!(input, self.select.view())
-            .spacing(5)
-            .padding(5)
+            .spacing(SPACING)
+            .padding(PADDING)
             .into()
         // let available_list = widget::pick_list(
         //     &self.available_ports,
         //     self.choosed.clone(),
-        //     AppMessage::PortSelected,
+        //     Self::Message::PortSelected,
         // )
         // .placeholder("choose a port");
         // let ratesheader = add_boder(row![
@@ -337,7 +335,7 @@ impl Application for App {
         // });
         // let allokscoreslen = allokscores.clone().count();
         // let sumscore = allokscores.clone().sum::<i32>();
-        // let display: Column<'_, AppMessage> = column![
+        // let display: Column<'_, Self::Message> = column![
         //     add_boder(
         //         column![
         //             creat_info("sum", allokscores.clone().sum::<i32>()),
@@ -349,13 +347,13 @@ impl Application for App {
         //     ),
         //     row![
         //         widget::button(std_text(if self.is_open { "close" } else { "open" }))
-        //             .on_press(AppMessage::OpenSerial),
-        //         widget::button(std_text("reset")).on_press(AppMessage::ReSet),
+        //             .on_press(Self::Message::OpenSerial),
+        //         widget::button(std_text("reset")).on_press(Self::Message::ReSet),
         //     ]
         //     .spacing(5),
         //     row![
-        //         widget::button(std_text("recheck")).on_press(AppMessage::ReCheck),
-        //         widget::button(std_text("requery")).on_press(AppMessage::ReQuery),
+        //         widget::button(std_text("recheck")).on_press(Self::Message::ReCheck),
+        //         widget::button(std_text("requery")).on_press(Self::Message::ReQuery),
         //     ]http://
         //     .spacing(5),
         // ]
@@ -367,7 +365,7 @@ impl Application for App {
         //         widget::pick_list(
         //             &config::BAUD_RATES[..],
         //             Some(self.config.baud_rate),
-        //             AppMessage::CfgBaudRate,
+        //             Self::Message::CfgBaudRate,
         //         ),
         //     ]
         //     .spacing(5),
@@ -375,27 +373,27 @@ impl Application for App {
         //         std_text("timeout"),
         //         widget::text_input("", self.config.timeout.to_string().as_str())
         //             .width(Length::Fixed(135.0))
-        //             .on_input(AppMessage::CfgTimeout),
+        //             .on_input(Self::Message::CfgTimeout),
         //     ]
         //     .spacing(5),
         //     row![
         //         std_text("max dev"),
         //         widget::text_input("", self.config.max_dev.to_string().as_str())
         //             .width(Length::Fixed(135.0))
-        //             .on_input(AppMessage::CfgMaxDev),
+        //             .on_input(Self::Message::CfgMaxDev),
         //     ]
         //     .spacing(5),
         //     row![
         //         std_text("try times"),
         //         widget::text_input("", self.config.try_cnt.to_string().as_str())
         //             .width(Length::Fixed(135.0))
-        //             .on_input(AppMessage::CfgTryCnt),
+        //             .on_input(Self::Message::CfgTryCnt),
         //     ]
         //     .spacing(5),
         //     widget::vertical_space(15),
         //     row![
-        //         widget::button(std_text("save")).on_press(AppMessage::Save),
-        //         widget::button(std_text("apply")).on_press(AppMessage::Apply),
+        //         widget::button(std_text("save")).on_press(Self::Message::Save),
+        //         widget::button(std_text("apply")).on_press(Self::Message::Apply),
         //     ]
         //     .spacing(40),
         // ]
@@ -410,18 +408,18 @@ impl Application for App {
     }
 }
 
-// fn add_boder<'a>(c: impl Into<Element<'a, AppMessage>>) -> Element<'a, AppMessage> {
+// fn add_boder<'a>(c: impl Into<Element<'a, Self::Message>>) -> Element<'a, Self::Message> {
 //     widget::container(c)
 //         .padding(5)
 //         .style(iced::theme::Container::Custom(Box::new(Boder)))
 //         .into()
 // }
 
-// fn creat_info(name: impl ToString, val: i32) -> Element<'static, AppMessage> {
+// fn creat_info(name: impl ToString, val: i32) -> Element<'static, Self::Message> {
 //     row![std_text(name), std_text(val)].spacing(5).into()
 // }
 
-// fn std_text<'a>(t: impl ToString) -> Element<'a, AppMessage> {
+// fn std_text<'a>(t: impl ToString) -> Element<'a, Self::Message> {
 //     widget::text(t)
 //         .width(80)
 //         .height(30)
@@ -434,7 +432,7 @@ impl Application for App {
 //     addr: i32,
 //     score: i32,
 //     state: rate_list::State,
-// ) -> Element<'a, AppMessage> {
+// ) -> Element<'a, Self::Message> {
 //     row![
 //         std_text(idx),
 //         std_text(addr),
