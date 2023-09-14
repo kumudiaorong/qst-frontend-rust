@@ -26,21 +26,23 @@ pub enum ConnectMessage {
     S2uReady(mpsc::Sender<comm::Request>),
     U2cTrySendConnect,
     C2uConnectFailed(Error),
-    C2uConnected,
-    C2uDisconnected,
+}
+
+#[derive(Debug, Clone)]
+pub enum FromUiMessage {
+    InputChanged(String),
+    Push(usize),
+    Submit,
 }
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
-    OnConnect(ConnectMessage),
+    RpcStart(mpsc::Sender<comm::Request>),
+    Rpc(comm::Response),
+    FromUi(FromUiMessage),
     Error(String),
-    Input(String),
-    List(qst_comm::DisplayList),
-    Push(usize),
     RunSuccess,
-    Empty,
     UserEvent(iced::Event),
-    Submit,
 }
 pub struct Flags {
     addr: String,
@@ -122,71 +124,71 @@ impl Application for App {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            Self::Message::OnConnect(cmsg) => match cmsg {
-                ConnectMessage::S2uReady(tx) => {
-                    self.tx = Some(tx);
-                    iced::Command::perform(
-                        async move {
-                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                        },
-                        |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
-                    )
+            AppMessage::RpcStart(tx) => {
+                self.tx = Some(tx);
+                if let Err(e) = self.try_send(comm::Request::Connect(self.addr.clone())) {
+                    log::warn(format!("send connect failed: {:?}", e).as_str());
+                    // iced::Command::perform(
+                    //     async move {
+                    //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    //     },
+                    //     |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
+                    // )
+                    Command::none()
+                } else {
+                    widget::text_input::focus(text_input::Id::new("i0"))
                 }
-                ConnectMessage::U2cTrySendConnect => {
-                    if let Err(e) = self.try_send(comm::Request::Connect(self.addr.clone())) {
-                        log::warn(format!("send connect failed: {:?}", e).as_str());
-                        iced::Command::perform(
-                            async move {
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            },
-                            |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
-                        )
-                    } else {
-                        widget::text_input::focus(text_input::Id::new("i0"))
-                    }
-                }
-                ConnectMessage::C2uConnected => {
+            }
+            AppMessage::Rpc(msg) => match msg {
+                comm::Response::Connected => {
                     self.is_connected = true;
                     Command::none()
                 }
-                ConnectMessage::C2uConnectFailed(e) => {
+                comm::Response::ConnectFailed(e) => {
                     log::warn(format!("connect failed: {:?}", e).as_str());
-                    iced::Command::perform(
-                        async move {
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        },
-                        |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
-                    )
+                    // iced::Command::perform(
+                    //     async move {
+                    //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    //     },
+                    //     |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
+                    // )
+                    Command::none()
                 }
-                ConnectMessage::C2uDisconnected => {
-                    self.is_connected = false;
-                    log::trace("disconnected");
+                comm::Response::RunSuccess => {
+                    log::trace("run success");
                     window::close()
+                }
+                comm::Response::SearchResult(list) => self.select.update(list.list),
+            },
+            AppMessage::FromUi(umsg) => match umsg {
+                FromUiMessage::InputChanged(input) => {
+                    self.input = input;
+                    if self.input.is_empty() {
+                        iced::Command::perform(async move {}, |_| {
+                            Self::Message::Rpc(comm::Response::SearchResult(DisplayList::default()))
+                        })
+                    } else if self.is_connected {
+                        if let Err(e) = self.try_send(comm::Request::Search(self.input.clone())) {
+                            log::warn(format!("input failed: {:?}", e).as_str());
+                        }
+                        Command::none()
+                    } else {
+                        Command::none()
+                    }
+                }
+                FromUiMessage::Push(idx) => {
+                    self.run_app(comm::Request::RunApp(self.list.list[idx].name.clone()));
+                    Command::none()
+                }
+                FromUiMessage::Submit => {
+                    if let Some(d) = self.select.selected() {
+                        self.run_app(comm::Request::RunApp(d.name.clone()));
+                    }
+                    Command::none()
                 }
             },
             Self::Message::Error(msg) => {
                 println!("error: {}", msg);
-                Command::none()
-            }
-            Self::Message::Empty => Command::none(),
-            Self::Message::Input(input) => {
-                self.input = input;
-                if self.input.is_empty() {
-                    iced::Command::perform(async move {}, |_| {
-                        Self::Message::List(DisplayList::default())
-                    })
-                } else if self.is_connected {
-                    if let Err(e) = self.try_send(comm::Request::Search(self.input.clone())) {
-                        log::warn(format!("input failed: {:?}", e).as_str());
-                    }
-                    Command::none()
-                } else {
-                    Command::none()
-                }
-            }
-            Self::Message::List(list) => self.select.update(list.list),
-            Self::Message::Push(idx) => {
-                self.run_app(comm::Request::RunApp(self.list.list[idx].name.clone()));
                 Command::none()
             }
             Self::Message::RunSuccess => window::close(),
@@ -208,12 +210,6 @@ impl Application for App {
                 // iced::Event::Window(iced::window::Event::Resized { width, height }
                 _ => Command::none(),
             },
-            Self::Message::Submit => {
-                if let Some(d) = self.select.selected() {
-                    self.run_app(comm::Request::RunApp(d.name.clone()));
-                }
-                Command::none()
-            }
         }
     }
     fn subscription(&self) -> Subscription<Self::Message> {
@@ -241,16 +237,9 @@ impl Application for App {
                             State::Starting => {
                                 // Create channel
                                 let (sender, receiver) = mpsc::channel(1000);
-
                                 // Send the sender back to the application
                                 // let _ = output.send(Self::Message::Ready(sender)).await;
-                                if let Err(e) = output
-                                    .send(
-                                        // Self::Message::Ready(sender)
-                                        Self::Message::OnConnect(ConnectMessage::S2uReady(sender)),
-                                    )
-                                    .await
-                                {
+                                if let Err(e) = output.send(Self::Message::RpcStart(sender)).await {
                                     log::warn(format!("send ready failed: {:?}", e).as_str());
                                 } else {
                                     // We are ready to receive messages
@@ -264,7 +253,7 @@ impl Application for App {
                                 WorkState::Normal => {
                                     // Read next input sent from `Application`
                                     if let Some(msg) = comm.next().await {
-                                        *wstate = WorkState::TrySend(msg);
+                                        *wstate = WorkState::TrySend(AppMessage::Rpc(msg));
                                     }
                                 }
                                 WorkState::TrySend(msg) => {
@@ -288,9 +277,9 @@ impl Application for App {
                 TEXT_WIDTH as f32,
             )))
             .padding(PADDING)
-            .on_input(Self::Message::Input)
+            .on_input(|input| AppMessage::FromUi(FromUiMessage::InputChanged(input)))
             .width(Length::Fill)
-            .on_submit(Self::Message::Submit)
+            .on_submit(AppMessage::FromUi(FromUiMessage::Submit))
             .id(text_input::Id::new("i0"));
         // .direction(
         //     widget::scrollable::Direction::Vertical(),

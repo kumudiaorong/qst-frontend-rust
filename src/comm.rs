@@ -4,15 +4,19 @@ pub mod qst_comm {
 use iced_futures::futures::channel::mpsc;
 use qst_comm::interact_client;
 
-use crate::ui::{AppMessage, Error};
-
 pub enum Request {
     Connect(String),
     Search(String),
     RunApp(String),
 }
 
-pub enum Response {}
+#[derive(Debug, Clone)]
+pub enum Response {
+    Connected,
+    ConnectFailed(String),
+    SearchResult(qst_comm::DisplayList),
+    RunSuccess,
+}
 
 const MAX_TRY_CONNECT: usize = 3;
 
@@ -41,7 +45,7 @@ impl Comm {
             Err(e) => Err(Box::new(e)),
         }
     }
-    pub async fn next(&mut self) -> Option<AppMessage> {
+    pub async fn next(&mut self) -> Option<Response> {
         use iced_futures::futures::StreamExt;
         match self.rx.select_next_some().await {
             Request::Connect(addr) => {
@@ -56,20 +60,16 @@ impl Comm {
                 if self.connect_try == MAX_TRY_CONNECT - 1 {
                     if let Err(e) = self.connect(addr.clone()).await {
                         self.connect_try = 0;
-                        return Some(AppMessage::OnConnect(
-                            crate::ui::ConnectMessage::C2uConnectFailed(Error::from(e)),
-                        ));
+                        return Some(Response::ConnectFailed(e.to_string()));
                     }
                 }
                 self.connect_try = 0;
-                return Some(AppMessage::OnConnect(
-                    crate::ui::ConnectMessage::C2uConnected,
-                ));
+                return Some(Response::Connected);
             }
             Request::Search(input) => {
                 if let Some(ref mut cli) = self.cli {
                     if let Ok(res) = cli.list_app(qst_comm::Input { str: input.clone() }).await {
-                        return Some(AppMessage::List(res.into_inner()));
+                        return Some(Response::SearchResult(res.into_inner()));
                     }
                 }
             }
@@ -83,7 +83,7 @@ impl Comm {
                         })
                         .await
                     {
-                        return Some(AppMessage::RunSuccess);
+                        return Some(Response::RunSuccess);
                     }
                 }
             }

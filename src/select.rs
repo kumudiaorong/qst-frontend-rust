@@ -1,6 +1,7 @@
 use crate::comm::qst_comm;
 use crate::ui;
 use crate::ui::AppMessage;
+use crate::ui::FromUiMessage;
 use iced::widget::{scrollable, Column};
 use iced::{theme, widget, Length};
 use xlog_rs::log;
@@ -179,7 +180,7 @@ impl Select {
                 widget::button(widget::text(r.name.as_str()).width(Length::Fill))
                     .height(ui::TEXT_WIDTH)
                     .width(Length::Fill)
-                    .on_press(AppMessage::Push(i))
+                    .on_press(AppMessage::FromUi(FromUiMessage::Push(i)))
                     .style(if i + 1 == self.selected_index {
                         theme::Button::Primary
                     } else {
