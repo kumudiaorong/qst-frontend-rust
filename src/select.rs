@@ -1,55 +1,85 @@
+use iced::keyboard;
 use iced::widget::{scrollable, Column};
 use iced::{theme, widget, Length};
 use xlog_rs::log;
 const SELECT_ID: &str = "s0";
 pub const SPACING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppInfoFlags(u32);
 impl AppInfoFlags {
-    const HAS_ARG_FILE: Self = Self(0b0000_0001);
-    const HAS_ARG_FILES: Self = Self(0b0000_0010);
-    const HAS_ARG_URL: Self = Self(0b0000_0100);
-    const HAS_ARG_URLS: Self = Self(0b0000_1000);
+    pub const HAS_ARG_FILE: Self = Self(0b0000_0001);
+    pub const HAS_ARG_FILES: Self = Self(0b0000_0010);
+    pub const HAS_ARG_URL: Self = Self(0b0000_0100);
+    pub const HAS_ARG_URLS: Self = Self(0b0000_1000);
+    pub const fn len(&self) -> u32 {
+        self.0.count_ones()
+    }
 }
 impl From<u32> for AppInfoFlags {
     fn from(v: u32) -> Self {
         Self(v)
     }
 }
-impl std::ops::BitOr for AppInfoFlags {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0)
+// impl std::ops::BitOr for AppInfoFlags {
+//     type Output = Self;
+//     fn bitor(self, rhs: Self) -> Self::Output {
+//         Self(self.0 | rhs.0)
+//     }
+// }
+// impl std::ops::BitOrAssign for AppInfoFlags {
+//     fn bitor_assign(&mut self, rhs: Self) {
+//         self.0 |= rhs.0;
+//     }
+// }
+// impl std::ops::BitAnd for AppInfoFlags {
+//     type Output = Self;
+//     fn bitand(self, rhs: Self) -> Self::Output {
+//         Self(self.0 & rhs.0)
+//     }
+// }
+// impl std::ops::BitAndAssign for AppInfoFlags {
+//     fn bitand_assign(&mut self, rhs: Self) {
+//         self.0 &= rhs.0;
+//     }
+// }
+// impl std::ops::Not for AppInfoFlags {
+//     type Output = Self;
+//     fn not(self) -> Self::Output {
+//         Self(!self.0)
+//     }
+// }
+// impl std::ops::BitXor for AppInfoFlags {
+//     type Output = Self;
+//     fn bitxor(self, rhs: Self) -> Self::Output {
+//         Self(self.0 ^ rhs.0)
+//     }
+// }
+impl ToString for AppInfoFlags {
+    fn to_string(&self) -> String {
+        let mut s = String::new();
+        if self.0 & AppInfoFlags::HAS_ARG_FILE.0 != 0 {
+            s.push_str("HAS_ARG_FILE|");
+        }
+        if self.0 & AppInfoFlags::HAS_ARG_FILES.0 != 0 {
+            s.push_str("HAS_ARG_FILES|");
+        }
+        if self.0 & AppInfoFlags::HAS_ARG_URL.0 != 0 {
+            s.push_str("HAS_ARG_URL|");
+        }
+        if self.0 & AppInfoFlags::HAS_ARG_URLS.0 != 0 {
+            s.push_str("HAS_ARG_URLS|");
+        }
+        if s.is_empty() {
+            "NONE".to_string()
+        } else {
+            s.pop();
+            format!("[{}]", s)
+        }
     }
 }
-impl std::ops::BitOrAssign for AppInfoFlags {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitAnd for AppInfoFlags {
-    type Output = Self;
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Self(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAndAssign for AppInfoFlags {
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::Not for AppInfoFlags {
-    type Output = Self;
-    fn not(self) -> Self::Output {
-        Self(!self.0)
-    }
-}
-impl std::ops::BitXor for AppInfoFlags {
-    type Output = Self;
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Self(self.0 ^ rhs.0)
-    }
-}
+//impl get size trait
 
 pub struct AppInfo {
     pub name: String,
@@ -58,18 +88,23 @@ pub struct AppInfo {
 }
 pub enum Message {
     Height(u16),
-    Up,
-    Down,
+    Key(keyboard::KeyCode),
     AppInfo(Vec<AppInfo>),
 }
 pub struct Select<Message> {
     pub id: scrollable::Id,
     pub apps: Vec<AppInfo>,
-    selected_index: usize,
+    pub selected_index: usize,
     height: u16,
     scroll_start: u16,
-    on_push: Option<Box<dyn Fn(String) -> Message>>,
+    on_push: Option<Box<dyn Fn(usize) -> Message>>,
 }
+// impl std::ops::Index<usize> for Select<Message> {
+//     type Output = AppInfo;
+//     fn index(&self, index: usize) -> &Self::Output {
+//         &self.apps[index]
+//     }
+// }
 impl<Message> Select<Message> {
     pub fn new() -> Self {
         Self {
@@ -93,7 +128,7 @@ impl<Message> Select<Message> {
     }
     pub fn on_push<F>(mut self, f: F) -> Self
     where
-        F: Fn(String) -> Message + 'static,
+        F: Fn(usize) -> Message + 'static,
     {
         self.on_push = Some(Box::new(f));
         self
@@ -104,7 +139,6 @@ impl<Message> Select<Message> {
     // pub fn has_selected(&self) -> bool {
     //     self.selected_index != 0
     // }
-
     pub fn selected(&self) -> Option<&AppInfo> {
         if self.selected_index == 0 {
             None
@@ -132,7 +166,7 @@ impl<Message> Select<Message> {
                     });
                 // self.on_push(r.name.clone())
                 if let Some(ref f) = self.on_push {
-                    btn.on_press(f(r.name.clone())).into()
+                    btn.on_press(f(i + 1)).into()
                 } else {
                     btn.into()
                 }
@@ -203,8 +237,11 @@ impl<Message: 'static> Select<Message> {
                 self.height = h;
                 self.check_scroll()
             }
-            super::select::Message::Up => self.up(),
-            super::select::Message::Down => self.down(),
+            super::select::Message::Key(k) => match k {
+                keyboard::KeyCode::Up => self.up(),
+                keyboard::KeyCode::Down => self.down(),
+                _ => iced::Command::none(),
+            },
             super::select::Message::AppInfo(apps) => {
                 self.apps = apps;
                 self.selected_index = 0;

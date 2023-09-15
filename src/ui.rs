@@ -29,7 +29,7 @@ pub enum ConnectMessage {
 #[derive(Debug, Clone)]
 pub enum FromUiMessage {
     InputChanged(String),
-    Push(String),
+    Push(usize),
     Submit,
 }
 
@@ -60,6 +60,10 @@ impl Flags {
         }
     }
 }
+enum Runstate {
+    Select,
+    AddArgs(String), //input
+}
 pub struct App {
     input: String,
     tx: Option<mpsc::Sender<comm::Request>>,
@@ -67,6 +71,8 @@ pub struct App {
     addr: String,
     select: select::Select<AppMessage>,
     win_size: iced::Size<u32>,
+    placeholder: String,
+    runstate: Runstate,
 }
 
 const WIN_INIT_SIZE: iced::Size<u32> = Size {
@@ -78,7 +84,28 @@ impl App {
     fn try_send(&mut self, req: comm::Request) -> Result<(), mpsc::TrySendError<comm::Request>> {
         self.tx.as_mut().unwrap().try_send(req)
     }
-    fn run_app(&mut self, req: comm::Request) {
+    fn run_app(&mut self) {
+        let app = self.select.selected().unwrap();
+        let mut file = None;
+        let mut url = None;
+        if app.flags.len() == 1 {
+            match app.flags {
+                select::AppInfoFlags::HAS_ARG_FILE | select::AppInfoFlags::HAS_ARG_FILES => {
+                    file = Some(std::mem::replace(&mut self.input, String::new()));
+                }
+                select::AppInfoFlags::HAS_ARG_URL | select::AppInfoFlags::HAS_ARG_URLS => {
+                    url = Some(std::mem::replace(&mut self.input, String::new()));
+                }
+                _ => {}
+            }
+        }
+        // if()
+        let req = comm::Request::RunApp(comm::ExecHint {
+            name: self.select.selected().unwrap().name.clone(),
+            file,
+            url,
+        });
+        log::trace(format!("run app: {:?}", req).as_str());
         if self.is_connected {
             if let Err(e) = self.try_send(req) {
                 log::warn(format!("run app failed: {:?}", e).as_str());
@@ -107,8 +134,10 @@ impl Application for App {
                         - (PADDING * 2)
                         - SPACING,
                 )
-                .on_push(|str| AppMessage::FromUi(FromUiMessage::Push(str))),
+                .on_push(|idx| AppMessage::FromUi(FromUiMessage::Push(idx))),
                 win_size: WIN_INIT_SIZE,
+                placeholder: "app name".to_string(),
+                runstate: Runstate::Select,
             },
             window::resize(WIN_INIT_SIZE),
         )
@@ -159,7 +188,7 @@ impl Application for App {
                         .into_iter()
                         .map(|d| select::AppInfo {
                             name: d.name,
-                            flags: select::AppInfoFlags::from(d.flags >> 1),
+                            flags: select::AppInfoFlags::from(d.flags),
                             icon: d.icon,
                         })
                         .collect(),
@@ -168,28 +197,76 @@ impl Application for App {
             AppMessage::FromUi(umsg) => match umsg {
                 FromUiMessage::InputChanged(input) => {
                     self.input = input;
-                    if self.input.is_empty() {
-                        iced::Command::perform(async move {}, |_| {
-                            Self::Message::FromRpc(comm::Response::SearchResult(
-                                comm::DisplayList::default(),
-                            ))
-                        })
-                    } else if self.is_connected {
-                        if let Err(e) = self.try_send(comm::Request::Search(self.input.clone())) {
-                            log::warn(format!("input failed: {:?}", e).as_str());
+                    match self.runstate {
+                        Runstate::Select => {
+                            if self.input.is_empty() {
+                                iced::Command::perform(async move {}, |_| {
+                                    Self::Message::FromRpc(comm::Response::SearchResult(
+                                        comm::DisplayList::default(),
+                                    ))
+                                })
+                            } else if self.is_connected {
+                                if let Err(e) =
+                                    self.try_send(comm::Request::Search(self.input.clone()))
+                                {
+                                    log::warn(format!("input failed: {:?}", e).as_str());
+                                }
+                                Command::none()
+                            } else {
+                                Command::none()
+                            }
                         }
-                        Command::none()
-                    } else {
-                        Command::none()
+                        Runstate::AddArgs(_) => Command::none(),
                     }
                 }
-                FromUiMessage::Push(name) => {
-                    self.run_app(comm::Request::RunApp(name));
-                    Command::none()
+                FromUiMessage::Push(idx) => {
+                    log::trace(format!("push: {}", idx).as_str());
+
+                    match self.runstate {
+                        Runstate::Select => {
+                            self.select.selected_index = idx;
+                            if let Some(app) = self.select.selected() {
+                                self.runstate = Runstate::AddArgs(std::mem::replace(
+                                    &mut self.input,
+                                    String::new(),
+                                ));
+                                self.placeholder = app.flags.to_string();
+                            }
+                        }
+                        Runstate::AddArgs(_) => {
+                            if self.select.selected_index == idx {
+                                self.run_app();
+                            } else {
+                                self.select.selected_index = idx;
+                                self.placeholder =
+                                    self.select.selected().unwrap().flags.to_string();
+                            }
+                            // self.runstate = Runstate::Select;
+                            // self.placeholder = "app name".to_string();
+
+                            // todo!("trans args")
+                        }
+                    }
+                    widget::text_input::focus(text_input::Id::new("i0"))
                 }
                 FromUiMessage::Submit => {
-                    if let Some(d) = self.select.selected() {
-                        self.run_app(comm::Request::RunApp(d.name.clone()));
+                    match self.runstate {
+                        Runstate::Select => {
+                            if let Some(app) = self.select.selected() {
+                                self.runstate = Runstate::AddArgs(std::mem::replace(
+                                    &mut self.input,
+                                    String::new(),
+                                ));
+                                self.placeholder = app.flags.to_string();
+                            }
+                        }
+                        Runstate::AddArgs(_) => {
+                            // self.runstate = Runstate::Select;
+                            // self.placeholder = "app name".to_string();
+                            self.run_app();
+
+                            // todo!("trans args")
+                        }
                     }
                     Command::none()
                 }
@@ -201,8 +278,14 @@ impl Application for App {
             Self::Message::UserEvent(e) => match e {
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
-                        iced::keyboard::KeyCode::Down => self.select.update(select::Message::Down),
-                        iced::keyboard::KeyCode::Up => self.select.update(select::Message::Up),
+                        iced::keyboard::KeyCode::Down | iced::keyboard::KeyCode::Up => {
+                            if let Runstate::AddArgs(input) = &mut self.runstate {
+                                std::mem::swap(&mut self.input, input);
+                                self.runstate = Runstate::Select;
+                                self.placeholder = "app name".to_string();
+                            }
+                            self.select.update(select::Message::Key(key_code))
+                        }
                         _ => Command::none(),
                     }
                 }
@@ -287,7 +370,7 @@ impl Application for App {
         ])
     }
     fn view(&self) -> Element<Self::Message> {
-        let input = widget::text_input("", self.input.as_str())
+        let input = widget::text_input(&self.placeholder, self.input.as_str())
             .line_height(widget::text::LineHeight::Absolute(iced::Pixels(
                 TEXT_WIDTH as f32,
             )))

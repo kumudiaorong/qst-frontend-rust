@@ -3,10 +3,11 @@ pub mod qst_comm {
 }
 use iced_futures::futures::channel::mpsc;
 pub use qst_comm::*;
+#[derive(Debug)]
 pub enum Request {
     Connect(String),
     Search(String),
-    RunApp(String),
+    RunApp(ExecHint),
 }
 
 #[derive(Debug, Clone)]
@@ -72,16 +73,9 @@ impl Comm {
                     }
                 }
             }
-            Request::RunApp(name) => {
+            Request::RunApp(eh) => {
                 if let Some(ref mut cli) = self.cli {
-                    if let Ok(_) = cli
-                        .run_app(ExecHint {
-                            name: name.clone(),
-                            file: None,
-                            url: None,
-                        })
-                        .await
-                    {
+                    if let Ok(_) = cli.run_app(eh).await {
                         return Some(Response::RunSuccess);
                     }
                 }
