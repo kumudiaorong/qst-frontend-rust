@@ -1,8 +1,6 @@
-use crate::comm::qst_comm::DisplayList;
 use crate::comm::{self, qst_comm};
 use crate::select;
-use iced::widget::text_input;
-use iced::widget::{self, column};
+use iced::widget::{self, column, text_input};
 use iced::{executor, window, Application, Command, Element, Length, Size, Subscription, Theme};
 use iced_futures::futures::channel::mpsc;
 use iced_futures::subscription;
@@ -31,17 +29,16 @@ pub enum ConnectMessage {
 #[derive(Debug, Clone)]
 pub enum FromUiMessage {
     InputChanged(String),
-    Push(usize),
+    Push(String),
     Submit,
 }
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
     RpcStart(mpsc::Sender<comm::Request>),
-    Rpc(comm::Response),
+    FromRpc(comm::Response),
     FromUi(FromUiMessage),
     Error(String),
-    RunSuccess,
     UserEvent(iced::Event),
 }
 pub struct Flags {
@@ -65,11 +62,10 @@ impl Flags {
 }
 pub struct App {
     input: String,
-    list: qst_comm::DisplayList,
     tx: Option<mpsc::Sender<comm::Request>>,
     is_connected: bool,
     addr: String,
-    select: select::Select,
+    select: select::Select<AppMessage>,
     win_size: iced::Size<u32>,
 }
 
@@ -104,14 +100,14 @@ impl Application for App {
                 tx: None,
                 is_connected: false,
                 input: String::new(),
-                list: qst_comm::DisplayList::default(),
                 addr: flags.addr,
                 select: select::Select::with_height(
                     WIN_INIT_SIZE.height as u16
                         - (TEXT_WIDTH + SPACING * 2)
                         - (PADDING * 2)
                         - SPACING,
-                ),
+                )
+                .on_push(|str| AppMessage::FromUi(FromUiMessage::Push(str))),
                 win_size: WIN_INIT_SIZE,
             },
             window::resize(WIN_INIT_SIZE),
@@ -139,7 +135,7 @@ impl Application for App {
                     widget::text_input::focus(text_input::Id::new("i0"))
                 }
             }
-            AppMessage::Rpc(msg) => match msg {
+            AppMessage::FromRpc(msg) => match msg {
                 comm::Response::Connected => {
                     self.is_connected = true;
                     Command::none()
@@ -158,14 +154,25 @@ impl Application for App {
                     log::trace("run success");
                     window::close()
                 }
-                comm::Response::SearchResult(list) => self.select.update(list.list),
+                comm::Response::SearchResult(list) => self.select.update(select::Message::AppInfo(
+                    list.list
+                        .into_iter()
+                        .map(|d| select::AppInfo {
+                            name: d.name,
+                            flags: select::AppInfoFlags::from(d.flags >> 1),
+                            icon: d.icon,
+                        })
+                        .collect(),
+                )),
             },
             AppMessage::FromUi(umsg) => match umsg {
                 FromUiMessage::InputChanged(input) => {
                     self.input = input;
                     if self.input.is_empty() {
                         iced::Command::perform(async move {}, |_| {
-                            Self::Message::Rpc(comm::Response::SearchResult(DisplayList::default()))
+                            Self::Message::FromRpc(comm::Response::SearchResult(
+                                comm::DisplayList::default(),
+                            ))
                         })
                     } else if self.is_connected {
                         if let Err(e) = self.try_send(comm::Request::Search(self.input.clone())) {
@@ -176,8 +183,8 @@ impl Application for App {
                         Command::none()
                     }
                 }
-                FromUiMessage::Push(idx) => {
-                    self.run_app(comm::Request::RunApp(self.list.list[idx].name.clone()));
+                FromUiMessage::Push(name) => {
+                    self.run_app(comm::Request::RunApp(name));
                     Command::none()
                 }
                 FromUiMessage::Submit => {
@@ -191,14 +198,22 @@ impl Application for App {
                 println!("error: {}", msg);
                 Command::none()
             }
-            Self::Message::RunSuccess => window::close(),
             Self::Message::UserEvent(e) => match e {
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
-                        iced::keyboard::KeyCode::Down => self.select.down(),
-                        iced::keyboard::KeyCode::Up => self.select.up(),
+                        iced::keyboard::KeyCode::Down => self.select.update(select::Message::Down),
+                        iced::keyboard::KeyCode::Up => self.select.update(select::Message::Up),
                         _ => Command::none(),
                     }
+                }
+                iced::Event::Window(iced::window::Event::Resized { width, height }) => {
+                    self.win_size = Size { width, height };
+                    // self.select.update(select::Message::Height(h))
+                    self.select.update(select::Message::Height(
+                        (height as u16)
+                            .checked_sub((TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING)
+                            .unwrap_or(0),
+                    ))
                 }
                 // iced::Event::Window(iced::window::Event::CloseRequested) => {
                 //     log::trace("close requested");
@@ -253,7 +268,7 @@ impl Application for App {
                                 WorkState::Normal => {
                                     // Read next input sent from `Application`
                                     if let Some(msg) = comm.next().await {
-                                        *wstate = WorkState::TrySend(AppMessage::Rpc(msg));
+                                        *wstate = WorkState::TrySend(AppMessage::FromRpc(msg));
                                     }
                                 }
                                 WorkState::TrySend(msg) => {

@@ -2,8 +2,7 @@ pub mod qst_comm {
     tonic::include_proto!("qst_comm");
 }
 use iced_futures::futures::channel::mpsc;
-use qst_comm::interact_client;
-
+pub use qst_comm::*;
 pub enum Request {
     Connect(String),
     Search(String),
@@ -14,7 +13,7 @@ pub enum Request {
 pub enum Response {
     Connected,
     ConnectFailed(String),
-    SearchResult(qst_comm::DisplayList),
+    SearchResult(DisplayList),
     RunSuccess,
 }
 
@@ -68,7 +67,7 @@ impl Comm {
             }
             Request::Search(input) => {
                 if let Some(ref mut cli) = self.cli {
-                    if let Ok(res) = cli.list_app(qst_comm::Input { str: input.clone() }).await {
+                    if let Ok(res) = cli.list_app(Input { str: input.clone() }).await {
                         return Some(Response::SearchResult(res.into_inner()));
                     }
                 }
@@ -76,7 +75,7 @@ impl Comm {
             Request::RunApp(name) => {
                 if let Some(ref mut cli) = self.cli {
                     if let Ok(_) = cli
-                        .run_app(qst_comm::ExecHint {
+                        .run_app(ExecHint {
                             name: name.clone(),
                             file: None,
                             url: None,
