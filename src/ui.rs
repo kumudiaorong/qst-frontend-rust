@@ -1,4 +1,4 @@
-use crate::comm::{self, qst_comm};
+use crate::comm;
 use crate::select;
 use iced::widget::{self, column, text_input};
 use iced::{executor, window, Application, Command, Element, Length, Size, Subscription, Theme};
@@ -91,7 +91,7 @@ impl App {
         }
         // if()
         let req = comm::Request::RunApp(comm::ExecHint {
-            name: self.select.selected().unwrap().name.clone(),
+            idx: (self.select.selected_index - 1) as u32,
             args,
         });
         log::trace(format!("run app: {:?}", req).as_str());
