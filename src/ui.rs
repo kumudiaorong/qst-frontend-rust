@@ -85,25 +85,14 @@ impl App {
         self.tx.as_mut().unwrap().try_send(req)
     }
     fn run_app(&mut self) {
-        let app = self.select.selected().unwrap();
-        let mut file = None;
-        let mut url = None;
-        if app.flags.len() == 1 {
-            match app.flags {
-                select::AppInfoFlags::HAS_ARG_FILE | select::AppInfoFlags::HAS_ARG_FILES => {
-                    file = Some(std::mem::replace(&mut self.input, String::new()));
-                }
-                select::AppInfoFlags::HAS_ARG_URL | select::AppInfoFlags::HAS_ARG_URLS => {
-                    url = Some(std::mem::replace(&mut self.input, String::new()));
-                }
-                _ => {}
-            }
+        let mut args = None;
+        if !self.input.is_empty() {
+            args = Some(self.input.clone());
         }
         // if()
         let req = comm::Request::RunApp(comm::ExecHint {
             name: self.select.selected().unwrap().name.clone(),
-            file,
-            url,
+            args,
         });
         log::trace(format!("run app: {:?}", req).as_str());
         if self.is_connected {
@@ -188,7 +177,7 @@ impl Application for App {
                         .into_iter()
                         .map(|d| select::AppInfo {
                             name: d.name,
-                            flags: select::AppInfoFlags::from(d.flags),
+                            arg_hint: d.arg_hint,
                             icon: d.icon,
                         })
                         .collect(),
@@ -230,7 +219,7 @@ impl Application for App {
                                     &mut self.input,
                                     String::new(),
                                 ));
-                                self.placeholder = app.flags.to_string();
+                                self.placeholder = app.arg_hint.clone().unwrap_or("".to_string());
                             }
                         }
                         Runstate::AddArgs(_) => {
@@ -238,8 +227,13 @@ impl Application for App {
                                 self.run_app();
                             } else {
                                 self.select.selected_index = idx;
-                                self.placeholder =
-                                    self.select.selected().unwrap().flags.to_string();
+                                self.placeholder = self
+                                    .select
+                                    .selected()
+                                    .unwrap()
+                                    .arg_hint
+                                    .clone()
+                                    .unwrap_or("".to_string());
                             }
                             // self.runstate = Runstate::Select;
                             // self.placeholder = "app name".to_string();
@@ -257,7 +251,7 @@ impl Application for App {
                                     &mut self.input,
                                     String::new(),
                                 ));
-                                self.placeholder = app.flags.to_string();
+                                self.placeholder = app.arg_hint.clone().unwrap_or("".to_string());
                             }
                         }
                         Runstate::AddArgs(_) => {

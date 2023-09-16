@@ -83,7 +83,7 @@ impl ToString for AppInfoFlags {
 
 pub struct AppInfo {
     pub name: String,
-    pub flags: AppInfoFlags,
+    pub arg_hint: Option<String>,
     pub icon: Option<String>,
 }
 pub enum Message {
