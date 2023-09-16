@@ -186,27 +186,21 @@ impl Application for App {
             AppMessage::FromUi(umsg) => match umsg {
                 FromUiMessage::InputChanged(input) => {
                     self.input = input;
-                    match self.runstate {
-                        Runstate::Select => {
-                            if self.input.is_empty() {
-                                iced::Command::perform(async move {}, |_| {
-                                    Self::Message::FromRpc(comm::Response::SearchResult(
-                                        comm::DisplayList::default(),
-                                    ))
-                                })
-                            } else if self.is_connected {
-                                if let Err(e) =
-                                    self.try_send(comm::Request::Search(self.input.clone()))
-                                {
-                                    log::warn(format!("input failed: {:?}", e).as_str());
-                                }
-                                Command::none()
-                            } else {
-                                Command::none()
+                    if matches!(self.runstate, Runstate::Select) {
+                        if self.input.is_empty() {
+                            return iced::Command::perform(async move {}, |_| {
+                                Self::Message::FromRpc(comm::Response::SearchResult(
+                                    comm::DisplayList::default(),
+                                ))
+                            });
+                        } else if self.is_connected {
+                            if let Err(e) = self.try_send(comm::Request::Search(self.input.clone()))
+                            {
+                                log::warn(format!("input failed: {:?}", e).as_str());
                             }
                         }
-                        Runstate::AddArgs(_) => Command::none(),
                     }
+                    Command::none()
                 }
                 FromUiMessage::Push(idx) => {
                     log::trace(format!("push: {}", idx).as_str());
@@ -219,7 +213,8 @@ impl Application for App {
                                     &mut self.input,
                                     String::new(),
                                 ));
-                                self.placeholder = app.arg_hint.clone().unwrap_or("".to_string());
+                                self.placeholder =
+                                    app.arg_hint.clone().unwrap_or("none args".to_string());
                             }
                         }
                         Runstate::AddArgs(_) => {
@@ -251,7 +246,8 @@ impl Application for App {
                                     &mut self.input,
                                     String::new(),
                                 ));
-                                self.placeholder = app.arg_hint.clone().unwrap_or("".to_string());
+                                self.placeholder =
+                                    app.arg_hint.clone().unwrap_or("none args".to_string());
                             }
                         }
                         Runstate::AddArgs(_) => {
