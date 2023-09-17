@@ -140,11 +140,7 @@ impl<Message> Select<Message> {
     //     self.selected_index != 0
     // }
     pub fn selected(&self) -> Option<&AppInfo> {
-        if self.selected_index == 0 {
-            None
-        } else {
-            self.apps.get((self.selected_index - 1) as usize)
-        }
+        self.apps.get(self.selected_index)
     }
     pub fn view(&self) -> iced::Element<Message>
     where
@@ -159,14 +155,14 @@ impl<Message> Select<Message> {
                 let btn = widget::button(widget::text(r.name.as_str()).width(Length::Fill))
                     .height(TEXT_WIDTH)
                     .width(Length::Fill)
-                    .style(if i + 1 == self.selected_index {
+                    .style(if i == self.selected_index {
                         theme::Button::Primary
                     } else {
                         theme::Button::Secondary
                     });
                 // self.on_push(r.name.clone())
                 if let Some(ref f) = self.on_push {
-                    btn.on_press(f(i + 1)).into()
+                    btn.on_press(f(i)).into()
                 } else {
                     btn.into()
                 }
@@ -184,13 +180,13 @@ impl<Message: 'static> Select<Message> {
     fn check_scroll(&mut self) -> iced::Command<Message> {
         let mut check_need = || {
             log::trace(format!("scrollstart: {}", self.scroll_start).as_str());
-            let mut minscroll = self.selected_index as u16 * (TEXT_WIDTH + SPACING) - SPACING;
+            let mut minscroll = self.selected_index as u16 * (TEXT_WIDTH + SPACING) + TEXT_WIDTH;
             log::trace(format!("minscrollend: {}", minscroll).as_str());
             if minscroll > self.scroll_start + self.height {
                 self.scroll_start = minscroll - self.height;
                 return true;
             }
-            minscroll = (self.selected_index as u16 - 1) * (TEXT_WIDTH + SPACING);
+            minscroll = (self.selected_index as u16) * (TEXT_WIDTH + SPACING);
             log::trace(format!("minscrollbegin: {}", minscroll).as_str());
             if minscroll < self.scroll_start {
                 self.scroll_start = minscroll;
@@ -214,7 +210,7 @@ impl<Message: 'static> Select<Message> {
     }
     fn down(&mut self) -> iced::Command<Message> {
         log::trace("Pressed down");
-        if self.selected_index < self.apps.len() {
+        if self.selected_index < self.apps.len() - 1 {
             self.selected_index += 1;
             self.check_scroll()
         } else {
@@ -223,7 +219,7 @@ impl<Message: 'static> Select<Message> {
     }
     fn up(&mut self) -> iced::Command<Message> {
         log::trace("Pressed up");
-        if self.selected_index > 1 {
+        if self.selected_index > 0 {
             self.selected_index -= 1;
             self.check_scroll()
         } else {

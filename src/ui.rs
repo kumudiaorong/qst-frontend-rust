@@ -91,7 +91,7 @@ impl App {
         }
         // if()
         let req = comm::Request::RunApp(comm::ExecHint {
-            idx: (self.select.selected_index - 1) as u32,
+            idx: self.select.selected_index as u32,
             args,
         });
         log::trace(format!("run app: {:?}", req).as_str());
