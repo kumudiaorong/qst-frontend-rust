@@ -51,21 +51,38 @@ pub enum AppMessage {
 pub struct Flags {
     endpoint: transport::Endpoint,
 }
+fn show_help() {
+    println!("Usage: qst [options]");
+    println!("Options:");
+    println!("  --uri <uri>    set uri");
+    println!("  --help         show help");
+}
 impl Flags {
     pub fn new(args: Vec<String>) -> Self {
         for (i, arg) in args.iter().enumerate() {
-            if arg == "--uri" {
-                if i + 1 < args.len() {
-                    match transport::Channel::from_shared(args[i + 1].clone()) {
-                        Err(e) => {
-                            panic!("invalid uri: {:?}", e);
+            match arg.as_str() {
+                "--help" => {
+                    show_help();
+                    std::process::exit(0);
+                }
+                "--uri" => {
+                    if i + 1 < args.len() {
+                        match transport::Channel::from_shared(args[i + 1].clone()) {
+                            Err(e) => {
+                                println!("invalid uri: {}", e);
+                                show_help();
+                                std::process::exit(1);
+                            }
+                            Ok(c) => return Self { endpoint: c },
                         }
-                        Ok(c) => return Self { endpoint: c },
                     }
                 }
+                _ => {}
             }
         }
-        panic!("no uri");
+        println!("invalid args");
+        show_help();
+        std::process::exit(1);
     }
 }
 enum Runstate {
@@ -150,12 +167,6 @@ impl iced::Application for App {
                 Command::perform(async {}, move |_| {
                     Self::Message::ToRpc(RpcRequest::Connect(ed))
                 })
-                // if let Err(e) = self.try_send(RpcRequest::Connect(self.endpoint.clone())) {
-                //     log::warn(format!("send connect failed: {:?}", e).as_str());
-                //     Command::none()
-                // } else {
-                //     widget::text_input::focus(text_input::Id::new("i0"))
-                // }
             }
             AppMessage::ToRpc(req) => {
                 if let Err(e) = self.try_send(req.clone()) {
