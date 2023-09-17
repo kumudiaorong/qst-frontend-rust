@@ -1,9 +1,15 @@
 use crate::comm;
 use crate::select;
-use iced::widget::{self, column, text_input};
-use iced::{executor, window, Application, Command, Element, Length, Size, Subscription, Theme};
-use iced_futures::futures::channel::mpsc;
-use iced_futures::subscription;
+use comm::Request as RpcRequest;
+use comm::Response as RpcResponse;
+use iced::{
+    widget::{self, column, text_input},
+    window, Command, Size, Subscription,
+};
+use iced_futures::futures::channel::mpsc as iced_mpsc;
+use std::time::Duration;
+use tokio::time::sleep as async_sleep;
+use tonic::transport;
 use xlog_rs::log;
 pub const SPACING: u16 = 5;
 pub const PADDING: u16 = 5;
@@ -21,7 +27,7 @@ impl Error {
 }
 #[derive(Debug, Clone)]
 pub enum ConnectMessage {
-    S2uReady(mpsc::Sender<comm::Request>),
+    S2uReady(iced_mpsc::Sender<RpcRequest>),
     U2cTrySendConnect,
     C2uConnectFailed(Error),
 }
@@ -35,29 +41,31 @@ pub enum FromUiMessage {
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
-    RpcStart(mpsc::Sender<comm::Request>),
-    FromRpc(comm::Response),
+    RpcStart(iced_mpsc::Sender<RpcRequest>),
+    FromRpc(RpcResponse),
+    ToRpc(RpcRequest),
     FromUi(FromUiMessage),
     Error(String),
     UserEvent(iced::Event),
 }
 pub struct Flags {
-    addr: String,
+    endpoint: transport::Endpoint,
 }
 impl Flags {
     pub fn new(args: Vec<String>) -> Self {
         for (i, arg) in args.iter().enumerate() {
-            if arg == "--addr" {
+            if arg == "--uri" {
                 if i + 1 < args.len() {
-                    return Self {
-                        addr: "http://".to_string() + args[i + 1].as_str(),
-                    };
+                    match transport::Channel::from_shared(args[i + 1].clone()) {
+                        Err(e) => {
+                            panic!("invalid uri: {:?}", e);
+                        }
+                        Ok(c) => return Self { endpoint: c },
+                    }
                 }
             }
         }
-        Self {
-            addr: "".to_string(),
-        }
+        panic!("no uri");
     }
 }
 enum Runstate {
@@ -66,57 +74,55 @@ enum Runstate {
 }
 pub struct App {
     input: String,
-    tx: Option<mpsc::Sender<comm::Request>>,
+    tx: Option<iced_mpsc::Sender<RpcRequest>>,
     is_connected: bool,
-    addr: String,
+    endpoint: transport::Endpoint,
     select: select::Select<AppMessage>,
-    win_size: iced::Size<u32>,
+    win_size: Size<u32>,
     placeholder: String,
     runstate: Runstate,
 }
 
-const WIN_INIT_SIZE: iced::Size<u32> = Size {
+const WIN_INIT_SIZE: Size<u32> = Size {
     width: 300,
     height: 245,
 };
 
 impl App {
-    fn try_send(&mut self, req: comm::Request) -> Result<(), mpsc::TrySendError<comm::Request>> {
+    fn try_send(&mut self, req: RpcRequest) -> Result<(), iced_mpsc::TrySendError<RpcRequest>> {
         self.tx.as_mut().unwrap().try_send(req)
     }
     fn run_app(&mut self) {
-        let mut args = None;
-        if !self.input.is_empty() {
-            args = Some(self.input.clone());
-        }
-        // if()
-        let req = comm::Request::RunApp(comm::ExecHint {
-            idx: self.select.selected_index as u32,
-            args,
-        });
-        log::trace(format!("run app: {:?}", req).as_str());
+        log::trace("run app");
         if self.is_connected {
-            if let Err(e) = self.try_send(req) {
+            if let Err(e) = self.try_send(RpcRequest::RunApp(comm::ExecHint {
+                idx: self.select.selected_index as u32,
+                args: if !self.input.is_empty() {
+                    Some(self.input.clone())
+                } else {
+                    None
+                },
+            })) {
                 log::warn(format!("run app failed: {:?}", e).as_str());
             }
         }
     }
 }
 
-impl Application for App {
-    type Executor = executor::Default;
+impl iced::Application for App {
+    type Executor = iced::executor::Default;
     type Message = AppMessage;
-    type Theme = Theme;
+    type Theme = iced::Theme;
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        log::trace(format!("addr: {}", flags.addr).as_str());
+        log::trace(format!("uri: {:#?}", flags.endpoint).as_str());
         (
             Self {
                 tx: None,
                 is_connected: false,
                 input: String::new(),
-                addr: flags.addr,
+                endpoint: flags.endpoint,
                 select: select::Select::with_height(
                     WIN_INIT_SIZE.height as u16
                         - (TEXT_WIDTH + SPACING * 2)
@@ -140,39 +146,50 @@ impl Application for App {
         match message {
             AppMessage::RpcStart(tx) => {
                 self.tx = Some(tx);
-                if let Err(e) = self.try_send(comm::Request::Connect(self.addr.clone())) {
-                    log::warn(format!("send connect failed: {:?}", e).as_str());
-                    // iced::Command::perform(
-                    //     async move {
-                    //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    //     },
-                    //     |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
-                    // )
-                    Command::none()
+                let ed = self.endpoint.clone();
+                Command::perform(async {}, move |_| {
+                    Self::Message::ToRpc(RpcRequest::Connect(ed))
+                })
+                // if let Err(e) = self.try_send(RpcRequest::Connect(self.endpoint.clone())) {
+                //     log::warn(format!("send connect failed: {:?}", e).as_str());
+                //     Command::none()
+                // } else {
+                //     widget::text_input::focus(text_input::Id::new("i0"))
+                // }
+            }
+            AppMessage::ToRpc(req) => {
+                if let Err(e) = self.try_send(req.clone()) {
+                    log::warn(format!("input failed: {:?}", e).as_str());
+                    Command::perform(
+                        async {
+                            async_sleep(Duration::from_millis(500)).await;
+                        },
+                        move |_| Self::Message::ToRpc(req),
+                    )
                 } else {
-                    widget::text_input::focus(text_input::Id::new("i0"))
+                    Command::none()
                 }
             }
             AppMessage::FromRpc(msg) => match msg {
-                comm::Response::Connected => {
+                RpcResponse::Connected => {
                     self.is_connected = true;
-                    Command::none()
+                    widget::text_input::focus(text_input::Id::new("i0"))
                 }
-                comm::Response::ConnectFailed(e) => {
+                RpcResponse::ConnectFailed(e) => {
                     log::warn(format!("connect failed: {:?}", e).as_str());
-                    // iced::Command::perform(
-                    //     async move {
-                    //         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    //     },
-                    //     |_| Self::Message::OnConnect(ConnectMessage::U2cTrySendConnect),
-                    // )
-                    Command::none()
+                    let ed = self.endpoint.clone();
+                    Command::perform(
+                        async {
+                            async_sleep(Duration::from_millis(500)).await;
+                        },
+                        move |_| Self::Message::ToRpc(RpcRequest::Connect(ed)),
+                    )
                 }
-                comm::Response::RunSuccess => {
+                RpcResponse::RunSuccess => {
                     log::trace("run success");
                     window::close()
                 }
-                comm::Response::SearchResult(list) => self.select.update(select::Message::AppInfo(
+                RpcResponse::SearchResult(list) => self.select.update(select::Message::AppInfo(
                     list.list
                         .into_iter()
                         .map(|d| select::AppInfo {
@@ -188,14 +205,13 @@ impl Application for App {
                     self.input = input;
                     if matches!(self.runstate, Runstate::Select) {
                         if self.input.is_empty() {
-                            return iced::Command::perform(async move {}, |_| {
-                                Self::Message::FromRpc(comm::Response::SearchResult(
+                            return Command::perform(async move {}, |_| {
+                                Self::Message::FromRpc(RpcResponse::SearchResult(
                                     comm::DisplayList::default(),
                                 ))
                             });
                         } else if self.is_connected {
-                            if let Err(e) = self.try_send(comm::Request::Search(self.input.clone()))
-                            {
+                            if let Err(e) = self.try_send(RpcRequest::Search(self.input.clone())) {
                                 log::warn(format!("input failed: {:?}", e).as_str());
                             }
                         }
@@ -236,7 +252,7 @@ impl Application for App {
                             // todo!("trans args")
                         }
                     }
-                    widget::text_input::focus(text_input::Id::new("i0"))
+                    text_input::focus(text_input::Id::new("i0"))
                 }
                 FromUiMessage::Submit => {
                     match self.runstate {
@@ -251,11 +267,7 @@ impl Application for App {
                             }
                         }
                         Runstate::AddArgs(_) => {
-                            // self.runstate = Runstate::Select;
-                            // self.placeholder = "app name".to_string();
                             self.run_app();
-
-                            // todo!("trans args")
                         }
                     }
                     Command::none()
@@ -314,7 +326,7 @@ impl Application for App {
             iced_futures::subscription::events()
                 .map(Self::Message::UserEvent)
                 .into(),
-            subscription::channel(
+            iced_futures::subscription::channel(
                 std::any::TypeId::of::<SomeSub>(),
                 1000,
                 |mut output| async move {
@@ -324,7 +336,7 @@ impl Application for App {
                         match &mut state {
                             State::Starting => {
                                 // Create channel
-                                let (sender, receiver) = mpsc::channel(1000);
+                                let (sender, receiver) = iced_mpsc::channel(1000);
                                 // Send the sender back to the application
                                 // let _ = output.send(Self::Message::Ready(sender)).await;
                                 if let Err(e) = output.send(Self::Message::RpcStart(sender)).await {
@@ -359,14 +371,14 @@ impl Application for App {
             .into(),
         ])
     }
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> iced::Element<Self::Message> {
         let input = widget::text_input(&self.placeholder, self.input.as_str())
             .line_height(widget::text::LineHeight::Absolute(iced::Pixels(
                 TEXT_WIDTH as f32,
             )))
             .padding(PADDING)
             .on_input(|input| AppMessage::FromUi(FromUiMessage::InputChanged(input)))
-            .width(Length::Fill)
+            .width(iced::Length::Fill)
             .on_submit(AppMessage::FromUi(FromUiMessage::Submit))
             .id(text_input::Id::new("i0"));
         // .direction(

@@ -1,11 +1,11 @@
 pub mod qst_comm {
     tonic::include_proto!("qst_comm");
 }
-use iced_futures::futures::channel::mpsc;
+use iced_futures::futures::channel::mpsc as iced_mpsc;
 pub use qst_comm::*;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Request {
-    Connect(String),
+    Connect(tonic::transport::Endpoint),
     Search(String),
     RunApp(ExecHint),
 }
@@ -22,11 +22,11 @@ const MAX_TRY_CONNECT: usize = 3;
 
 pub struct Comm {
     cli: Option<interact_client::InteractClient<tonic::transport::Channel>>,
-    rx: mpsc::Receiver<Request>,
+    rx: iced_mpsc::Receiver<Request>,
     connect_try: usize,
 }
 impl Comm {
-    pub fn new(rx: mpsc::Receiver<Request>) -> Self {
+    pub fn new(rx: iced_mpsc::Receiver<Request>) -> Self {
         Self {
             cli: None,
             rx,
@@ -35,9 +35,9 @@ impl Comm {
     }
     pub async fn connect(
         &mut self,
-        addr: impl Into<String>,
+        endpoint: tonic::transport::Endpoint,
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        match interact_client::InteractClient::connect(addr.into()).await {
+        match interact_client::InteractClient::connect(endpoint).await {
             Ok(c) => {
                 self.cli = Some(c);
                 Ok(())
@@ -48,9 +48,9 @@ impl Comm {
     pub async fn next(&mut self) -> Option<Response> {
         use iced_futures::futures::StreamExt;
         match self.rx.select_next_some().await {
-            Request::Connect(addr) => {
+            Request::Connect(endpoint) => {
                 while self.connect_try < MAX_TRY_CONNECT - 1 {
-                    if let Err(_) = self.connect(addr.clone()).await {
+                    if let Err(_) = self.connect(endpoint.clone()).await {
                         self.connect_try += 1;
                     } else {
                         self.connect_try = 0;
@@ -58,7 +58,7 @@ impl Comm {
                     }
                 }
                 if self.connect_try == MAX_TRY_CONNECT - 1 {
-                    if let Err(e) = self.connect(addr.clone()).await {
+                    if let Err(e) = self.connect(endpoint).await {
                         self.connect_try = 0;
                         return Some(Response::ConnectFailed(e.to_string()));
                     }
