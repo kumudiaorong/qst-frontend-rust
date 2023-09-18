@@ -288,39 +288,33 @@ impl iced::Application for App {
                 println!("error: {}", msg);
                 Command::none()
             }
-            Self::Message::UserEvent(e) => match e {
-                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
-                    match key_code {
-                        iced::keyboard::KeyCode::Down | iced::keyboard::KeyCode::Up => {
-                            if let Runstate::AddArgs(input) = &mut self.runstate {
-                                std::mem::swap(&mut self.input, input);
-                                self.runstate = Runstate::Select;
-                                self.placeholder = "app name".to_string();
-                            }
-                            self.select.update(select::Message::Key(key_code))
-                        }
-                        _ => Command::none(),
+            Self::Message::UserEvent(e) => {
+                let cmd = self.select.on_event(&e);
+                if cmd.is_some() {
+                    if let Runstate::AddArgs(input) = &mut self.runstate {
+                        std::mem::swap(&mut self.input, input);
+                        self.runstate = Runstate::Select;
+                        self.placeholder = "app name".to_string();
                     }
                 }
-                iced::Event::Window(iced::window::Event::Resized { width, height }) => {
-                    self.win_size = Size { width, height };
-                    // self.select.update(select::Message::Height(h))
-                    self.select.update(select::Message::Height(
-                        (height as u16)
-                            .checked_sub((TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING)
-                            .unwrap_or(0),
-                    ))
-                }
-                // iced::Event::Window(iced::window::Event::CloseRequested) => {
-                //     log::trace("close requested");
-                //     if let Err(e) = self.try_send(comm::Event::Over) {
-                //         log::warn(format!("input failed: {:?}", e).as_str());
-                //     }
-                //     Command::none()
-                // }
-                // iced::Event::Window(iced::window::Event::Resized { width, height }
-                _ => Command::none(),
-            },
+                Command::batch([
+                    cmd.unwrap_or(Command::none()),
+                    match e {
+                        iced::Event::Window(iced::window::Event::Resized { width, height }) => {
+                            self.win_size = Size { width, height };
+                            // self.select.update(select::Message::Height(h))
+                            self.select.update(select::Message::Height(
+                                (height as u16)
+                                    .checked_sub(
+                                        (TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING,
+                                    )
+                                    .unwrap_or(0),
+                            ))
+                        }
+                        _ => Command::none(),
+                    },
+                ])
+            }
         }
     }
     fn subscription(&self) -> Subscription<Self::Message> {

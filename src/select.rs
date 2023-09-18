@@ -88,7 +88,6 @@ pub struct AppInfo {
 }
 pub enum Message {
     Height(u16),
-    Key(keyboard::KeyCode),
     AppInfo(Vec<AppInfo>),
 }
 pub struct Select<Message> {
@@ -139,6 +138,7 @@ impl<Message> Select<Message> {
     // pub fn has_selected(&self) -> bool {
     //     self.selected_index != 0
     // }
+
     pub fn selected(&self) -> Option<&AppInfo> {
         self.apps.get(self.selected_index)
     }
@@ -226,18 +226,24 @@ impl<Message: 'static> Select<Message> {
             iced::Command::none()
         }
     }
-
+    pub fn on_event(&mut self, e: &iced::Event) -> Option<iced::Command<Message>> {
+        match e {
+            iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
+                match key_code {
+                    keyboard::KeyCode::Up => Some(self.up()),
+                    keyboard::KeyCode::Down => Some(self.down()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
     pub fn update(&mut self, msg: super::select::Message) -> iced::Command<Message> {
         match msg {
             super::select::Message::Height(h) => {
                 self.height = h;
                 self.check_scroll()
             }
-            super::select::Message::Key(k) => match k {
-                keyboard::KeyCode::Up => self.up(),
-                keyboard::KeyCode::Down => self.down(),
-                _ => iced::Command::none(),
-            },
             super::select::Message::AppInfo(apps) => {
                 self.apps = apps;
                 self.selected_index = 0;
