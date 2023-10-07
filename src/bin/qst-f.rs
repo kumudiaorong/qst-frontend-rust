@@ -1,4 +1,4 @@
-use qst_front_end::ui;
+use qstf::ui;
 
 use iced::Application;
 

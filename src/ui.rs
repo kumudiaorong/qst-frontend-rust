@@ -1,19 +1,26 @@
-use crate::comm;
 mod select;
-use comm::Request as RpcRequest;
-use comm::Response as RpcResponse;
+
+use crate::comm::{self, Request as RpcRequest, Response as RpcResponse};
 use iced::{
     widget::{self, column, text_input},
     window, Command, Size, Subscription,
 };
 use iced_futures::futures::channel::mpsc as iced_mpsc;
-use tokio::time::sleep as async_sleep;
-use tokio::time::Duration;
+use tokio::time::{sleep as async_sleep, Duration};
 use tonic::transport;
 use xlog_rs::log;
+
 pub const SPACING: u16 = 5;
 pub const PADDING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
+
+fn convert_select_msg(msg: select::Message) -> AppMessage {
+    match msg {
+        select::Message::Push(idx) => AppMessage::FromUi(FromUiMessage::Push(idx)),
+        _ => todo!("convert select msg"),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Error {
     msg: String,
@@ -54,27 +61,27 @@ pub struct Flags {
 fn show_help() {
     println!("Usage: qst [options]");
     println!("Options:");
-    println!("  --addr <addr>    set addr");
-    println!("  --help         show help");
+    println!("  -uri <uri>    set uri");
+    println!("  -help         show help");
 }
 impl Flags {
     pub fn new(args: Vec<String>) -> Self {
         for (i, arg) in args.iter().enumerate() {
             match arg.as_str() {
-                "--help" => {
+                "-help" => {
                     show_help();
                     std::process::exit(0);
                 }
-                "--addr" => {
+                "-uri" => {
                     if i + 1 < args.len() {
                         match transport::Channel::from_shared(args[i + 1].clone()) {
                             Err(e) => {
-                                println!("invalid addr: {}", e);
+                                log::error(format!("invalid uri: {}", e).as_str());
                                 show_help();
                                 std::process::exit(1);
                             }
                             Ok(c) => {
-                                log::info(format!("addr: {:#?}", c).as_str());
+                                log::info(format!("addr: {:#?}", c.uri()).as_str());
                                 return Self { endpoint: c };
                             }
                         }
@@ -125,7 +132,7 @@ pub struct App {
     tx: Option<iced_mpsc::Sender<RpcRequest>>,
     is_connected: bool,
     endpoint: transport::Endpoint,
-    select: select::Select<AppMessage>,
+    select: select::Select,
     win_size: Size<u32>,
     placeholder: String,
     runstate: Runstate,
@@ -151,20 +158,19 @@ impl iced::Application for App {
     type Flags = Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        log::trace(format!("addr: {:#?}", flags.endpoint).as_str());
         (
             Self {
                 tx: None,
                 is_connected: false,
                 input: String::new(),
                 endpoint: flags.endpoint,
-                select: select::Select::with_height(
+                select: select::Select::new(
                     WIN_INIT_SIZE.height as u16
                         - (TEXT_WIDTH + SPACING * 2)
                         - (PADDING * 2)
                         - SPACING,
                 )
-                .on_push(|idx| AppMessage::FromUi(FromUiMessage::Push(idx))),
+                .0,
                 win_size: WIN_INIT_SIZE,
                 placeholder: "app name".to_string(),
                 runstate: Runstate::Select,
@@ -207,8 +213,9 @@ impl iced::Application for App {
                         self.is_connected = true;
                         widget::text_input::focus(text_input::Id::new("i0"))
                     }
-                    RpcResponse::SearchResult(mut list) => {
-                        self.select.update(select::Message::AppInfo(
+                    RpcResponse::SearchResult(mut list) => self
+                        .select
+                        .update(select::Message::AppInfo(
                             list.drain(..)
                                 .map(|d| select::AppInfo {
                                     id: d.id,
@@ -218,7 +225,7 @@ impl iced::Application for App {
                                 })
                                 .collect(),
                         ))
-                    }
+                        .map(convert_select_msg),
                     RpcResponse::FillResult(content) => {
                         self.input = content;
                         Command::none()
@@ -342,31 +349,47 @@ impl iced::Application for App {
                 Command::none()
             }
             Self::Message::UserEvent(e) => {
-                let cmd = self.select.on_event(&e);
-                if cmd.is_some() {
-                    if let Runstate::AddArgs(input) = &mut self.runstate {
-                        std::mem::swap(&mut self.input, input);
-                        self.runstate = Runstate::Select;
-                        self.placeholder = "app name".to_string();
-                    }
-                }
-                Command::batch([
-                    cmd.unwrap_or(Command::none()),
-                    match e {
-                        iced::Event::Window(iced::window::Event::Resized { width, height }) => {
-                            self.win_size = Size { width, height };
-                            // self.select.update(select::Message::Height(h))
-                            self.select.update(select::Message::Height(
+                match e {
+                    iced::Event::Window(iced::window::Event::Resized { width, height }) => {
+                        self.win_size = Size { width, height };
+                        // self.select.update(select::Message::Height(h))
+                        self.select
+                            .update(select::Message::Height(
                                 (height as u16)
                                     .checked_sub(
                                         (TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING,
                                     )
                                     .unwrap_or(0),
                             ))
+                            .map(convert_select_msg)
+                    }
+                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        key_code, ..
+                    }) => match key_code {
+                        iced::keyboard::KeyCode::Up => {
+                            if let Runstate::AddArgs(input) = &mut self.runstate {
+                                std::mem::swap(&mut self.input, input);
+                                self.runstate = Runstate::Select;
+                                self.placeholder = "app name".to_string();
+                            }
+                            self.select
+                                .update(select::Message::Up)
+                                .map(convert_select_msg)
+                        }
+                        iced::keyboard::KeyCode::Down => {
+                            if let Runstate::AddArgs(input) = &mut self.runstate {
+                                std::mem::swap(&mut self.input, input);
+                                self.runstate = Runstate::Select;
+                                self.placeholder = "app name".to_string();
+                            }
+                            self.select
+                                .update(select::Message::Down)
+                                .map(convert_select_msg)
                         }
                         _ => Command::none(),
                     },
-                ])
+                    _ => Command::none(),
+                }
             }
         }
     }
@@ -443,7 +466,7 @@ impl iced::Application for App {
         //     widget::scrollable::Direction::Vertical(),
         //     widget::scrollable::Properties::new().
         // );
-        column!(input, self.select.view())
+        column!(input, self.select.view().map(convert_select_msg))
             .spacing(SPACING)
             .padding(PADDING)
             .into()
