@@ -1,6 +1,4 @@
-use iced::keyboard;
-use iced::widget;
-use iced::widget::scrollable;
+use iced::{keyboard, widget, widget::scrollable};
 use xlog_rs::log;
 const SELECT_ID: &str = "s0";
 pub const SPACING: u16 = 5;
@@ -82,6 +80,7 @@ impl ToString for AppInfoFlags {
 //impl get size trait
 
 pub struct AppInfo {
+    pub id: u32,
     pub name: String,
     pub arg_hint: Option<String>,
     pub icon: Option<String>,
@@ -179,15 +178,15 @@ impl<Message> Select<Message> {
 impl<Message: 'static> Select<Message> {
     fn check_scroll(&mut self) -> iced::Command<Message> {
         let mut check_need = || {
-            log::trace(format!("scrollstart: {}", self.scroll_start).as_str());
+            // log::trace(format!("scrollstart: {}", self.scroll_start).as_str());
             let mut minscroll = self.selected_index as u16 * (TEXT_WIDTH + SPACING) + TEXT_WIDTH;
-            log::trace(format!("minscrollend: {}", minscroll).as_str());
+            // log::trace(format!("minscrollend: {}", minscroll).as_str());
             if minscroll > self.scroll_start + self.height {
                 self.scroll_start = minscroll - self.height;
                 return true;
             }
             minscroll = (self.selected_index as u16) * (TEXT_WIDTH + SPACING);
-            log::trace(format!("minscrollbegin: {}", minscroll).as_str());
+            // log::trace(format!("minscrollbegin: {}", minscroll).as_str());
             if minscroll < self.scroll_start {
                 self.scroll_start = minscroll;
                 return true;
@@ -208,30 +207,30 @@ impl<Message: 'static> Select<Message> {
             iced::Command::none()
         }
     }
-    fn down(&mut self) -> iced::Command<Message> {
+    fn down(&mut self) -> Option<iced::Command<Message>> {
         log::trace("Pressed down");
         if self.selected_index < self.apps.len() - 1 {
             self.selected_index += 1;
-            self.check_scroll()
+            Some(self.check_scroll())
         } else {
-            iced::Command::none()
+            None
         }
     }
-    fn up(&mut self) -> iced::Command<Message> {
+    fn up(&mut self) -> Option<iced::Command<Message>> {
         log::trace("Pressed up");
         if self.selected_index > 0 {
             self.selected_index -= 1;
-            self.check_scroll()
+            Some(self.check_scroll())
         } else {
-            iced::Command::none()
+            None
         }
     }
     pub fn on_event(&mut self, e: &iced::Event) -> Option<iced::Command<Message>> {
         match e {
             iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                 match key_code {
-                    keyboard::KeyCode::Up => Some(self.up()),
-                    keyboard::KeyCode::Down => Some(self.down()),
+                    keyboard::KeyCode::Up => self.up(),
+                    keyboard::KeyCode::Down => self.down(),
                     _ => None,
                 }
             }

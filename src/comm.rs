@@ -1,86 +1,105 @@
-pub mod qst_comm {
-    tonic::include_proto!("qst_comm");
+pub mod defs {
+    tonic::include_proto!("defs");
 }
+
+pub mod daemon;
+pub mod error;
+pub mod ext;
+mod utils;
+pub use ext::DisplayList;
 use iced_futures::futures::channel::mpsc as iced_mpsc;
-pub use qst_comm::*;
+use xlog_rs::log;
 #[derive(Debug, Clone)]
 pub enum Request {
     Connect(tonic::transport::Endpoint),
-    Search(String),
-    RunApp(ExecHint),
+    Search {
+        prompt: String,
+        input: String,
+    },
+    Submit {
+        prompt: String,
+        obj_id: u32,
+        hint: Option<String>,
+    },
+    Fill {
+        prompt: String,
+        obj_id: u32,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum Response {
-    Connected,
-    ConnectFailed(String),
-    SearchResult(DisplayList),
-    RunSuccess,
+    ConnectResult,
+    SearchResult(Vec<ext::Display>),
+    SubmitResult,
+    FillResult(String),
 }
 
 const MAX_TRY_CONNECT: usize = 3;
 
 pub struct Comm {
-    cli: Option<interact_client::InteractClient<tonic::transport::Channel>>,
+    dae: Option<daemon::DaemonService>,
+    ext: std::collections::HashMap<String, ext::ExtService>,
     rx: iced_mpsc::Receiver<Request>,
-    connect_try: usize,
 }
 impl Comm {
     pub fn new(rx: iced_mpsc::Receiver<Request>) -> Self {
         Self {
-            cli: None,
+            dae: None,
+            ext: std::collections::HashMap::new(),
             rx,
-            connect_try: 0,
         }
     }
-    pub async fn connect(
-        &mut self,
-        endpoint: tonic::transport::Endpoint,
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        match interact_client::InteractClient::connect(endpoint).await {
-            Ok(c) => {
-                self.cli = Some(c);
-                Ok(())
-            }
-            Err(e) => Err(Box::new(e)),
-        }
-    }
-    pub async fn next(&mut self) -> Option<Response> {
+    pub async fn next(&mut self) -> Result<Response, error::Error> {
         use iced_futures::futures::StreamExt;
         match self.rx.select_next_some().await {
             Request::Connect(endpoint) => {
-                while self.connect_try < MAX_TRY_CONNECT - 1 {
-                    if let Err(_) = self.connect(endpoint.clone()).await {
-                        self.connect_try += 1;
-                    } else {
-                        self.connect_try = 0;
-                        break;
-                    }
-                }
-                if self.connect_try == MAX_TRY_CONNECT - 1 {
-                    if let Err(e) = self.connect(endpoint).await {
-                        self.connect_try = 0;
-                        return Some(Response::ConnectFailed(e.to_string()));
-                    }
-                }
-                self.connect_try = 0;
-                return Some(Response::Connected);
+                log::debug(format!("connect to {:?}", endpoint).as_str());
+                daemon::DaemonService::connect(MAX_TRY_CONNECT as u32, endpoint.clone())
+                    .await
+                    .map(|dae| {
+                        self.dae = Some(dae);
+                        Response::ConnectResult
+                    })
             }
-            Request::Search(input) => {
-                if let Some(ref mut cli) = self.cli {
-                    if let Ok(res) = cli.list_app(Input { str: input.clone() }).await {
-                        return Some(Response::SearchResult(res.into_inner()));
+            Request::Search { prompt, input } => {
+                log::debug(format!("search {} with {}", prompt, input).as_str());
+                match self.ext.get_mut(&prompt) {
+                    Some(e) => e,
+                    None => {
+                        self.ext.insert(
+                            prompt.clone(),
+                            ext::ExtService::with_port(
+                                MAX_TRY_CONNECT as u32,
+                                self.dae.as_mut().unwrap().get_ext_port(&prompt).await?,
+                            )
+                            .await?,
+                        );
+                        self.ext.get_mut(&prompt).unwrap()
                     }
                 }
+                .search(input.as_str())
+                .await
+                .map(|displays| Response::SearchResult(displays))
             }
-            Request::RunApp(eh) => {
-                if let Some(ref mut cli) = self.cli {
-                    if let Ok(_) = cli.run_app(eh).await {
-                        return Some(Response::RunSuccess);
-                    }
-                }
-            }
+            Request::Submit {
+                prompt,
+                obj_id,
+                hint,
+            } => self
+                .ext
+                .get_mut(&prompt)
+                .unwrap()
+                .submit(obj_id, hint)
+                .await
+                .map(|_| Response::SubmitResult),
+            Request::Fill { prompt, obj_id } => self
+                .ext
+                .get_mut(&prompt)
+                .unwrap()
+                .fill(obj_id)
+                .await
+                .map(|content| Response::FillResult(content)),
         }
-        None
     }
 }
