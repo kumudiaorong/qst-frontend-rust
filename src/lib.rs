@@ -1,4 +1,4 @@
-pub mod comm;
+pub mod rpc;
 pub mod ui;
 
 use iced::Application;
@@ -10,7 +10,7 @@ enum WorkState {
 }
 enum State {
     Starting,
-    Working(comm::Comm, WorkState),
+    Working(rpc::Service, iced_mpsc::Receiver<ui::ToServer>, WorkState),
 }
 fn subs() -> iced_futures::Subscription<ui::AppMessage> {
     struct SomeSub;
@@ -24,46 +24,65 @@ fn subs() -> iced_futures::Subscription<ui::AppMessage> {
                 match &mut state {
                     State::Starting => {
                         let (sender, receiver) = iced_mpsc::channel(1000);
-                        if let Err(e) = output.send(ui::AppMessage::RpcStart(sender)).await {
+                        if let Err(e) = output.send(ui::AppMessage::Start(sender)).await {
                             log::warn(format!("send ready failed: {:?}", e).as_str());
                         } else {
                             log::info("subscribe ready");
-                            state = State::Working(comm::Comm::new(receiver), WorkState::Normal);
+                            state =
+                                State::Working(rpc::Service::new(), receiver, WorkState::Normal);
                         }
                     }
-                    State::Working(comm, wstate) => match wstate {
+                    State::Working(rpc, rx, wstate) => match wstate {
                         WorkState::Normal => {
-                            *wstate = WorkState::TrySend(ui::AppMessage::FromRpc(
-                                comm.next()
-                                    .await
-                                    .map(|resp| match resp {
-                                        comm::Response::ConnectResult => {
-                                            ui::RpcMessage::ConnectResult
-                                        }
-                                        comm::Response::SearchResult(mut displays) => {
-                                            ui::RpcMessage::SearchResult(
-                                                displays
-                                                    .drain(..)
-                                                    .map(|d| ui::AppInfo {
-                                                        id: d.id,
-                                                        name: d.name,
-                                                        arg_hint: d.hint,
-                                                        icon: None,
-                                                    })
-                                                    .collect(),
-                                            )
-                                        }
-                                        comm::Response::SubmitResult => {
-                                            ui::RpcMessage::SubmitResult
-                                        }
-                                        comm::Response::FillResult(fill) => {
-                                            ui::RpcMessage::FillResult(fill)
-                                        }
+                            use iced_futures::futures::StreamExt;
+                            let ret = match rx.select_next_some().await {
+                                ui::ToServer::Connect(endpoint) => {
+                                    rpc.request(rpc::Request::Connect(endpoint.clone())).await
+                                }
+                                ui::ToServer::Search { prompt, input } => {
+                                    rpc.request(rpc::Request::Search { prompt, input }).await
+                                }
+                                ui::ToServer::Submit {
+                                    prompt,
+                                    obj_id,
+                                    hint,
+                                } => {
+                                    rpc.request(rpc::Request::Submit {
+                                        prompt,
+                                        obj_id,
+                                        hint,
                                     })
-                                    .map_err(|e| {
-                                        log::warn(format!("rpc error: {:?}", e).as_str());
-                                        ui::Error::from(e)
-                                    }),
+                                    .await
+                                }
+                                ui::ToServer::Fill { prompt, obj_id } => {
+                                    rpc.request(rpc::Request::Fill { prompt, obj_id }).await
+                                }
+                            };
+                            *wstate = WorkState::TrySend(ui::AppMessage::FromServer(
+                                ret.map(|resp| match resp {
+                                    rpc::Response::ConnectResult => ui::FromServer::ConnectResult,
+                                    rpc::Response::SearchResult(mut displays) => {
+                                        ui::FromServer::SearchResult(
+                                            displays
+                                                .drain(..)
+                                                .map(|d| ui::AppInfo {
+                                                    id: d.id,
+                                                    name: d.name,
+                                                    arg_hint: d.hint,
+                                                    icon: None,
+                                                })
+                                                .collect(),
+                                        )
+                                    }
+                                    rpc::Response::SubmitResult => ui::FromServer::SubmitResult,
+                                    rpc::Response::FillResult(fill) => {
+                                        ui::FromServer::FillResult(fill)
+                                    }
+                                })
+                                .map_err(|e| {
+                                    log::warn(format!("rpc error: {:?}", e).as_str());
+                                    ui::Error::from(e)
+                                }),
                             ));
                         }
                         WorkState::TrySend(msg) => {

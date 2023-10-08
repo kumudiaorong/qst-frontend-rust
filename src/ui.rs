@@ -1,13 +1,12 @@
+mod flags;
 mod select;
-
-use crate::comm::Request as RpcRequest;
+pub use flags::Flags;
 use iced::{
     widget::{self, column, text_input},
     window, Command, Size, Subscription,
 };
 use iced_futures::futures::channel::mpsc as iced_mpsc;
 use tokio::time::{sleep as async_sleep, Duration};
-use tonic::transport;
 use xlog_rs::log;
 
 pub const SPACING: u16 = 5;
@@ -17,7 +16,7 @@ pub const TEXT_WIDTH: u16 = 35;
 pub use select::AppInfo;
 fn convert_select_msg(msg: select::Message) -> AppMessage {
     match msg {
-        select::Message::Push(idx) => AppMessage::FromUi(FromUiMessage::Push(idx)),
+        select::Message::Push(idx) => AppMessage::FromUi(FromUi::Push(idx)),
         _ => todo!("convert select msg"),
     }
 }
@@ -34,20 +33,13 @@ impl Error {
     }
 }
 #[derive(Debug, Clone)]
-pub enum ConnectMessage {
-    S2uReady(iced_mpsc::Sender<RpcRequest>),
-    U2cTrySendConnect,
-    C2uConnectFailed(Error),
-}
-
-#[derive(Debug, Clone)]
-pub enum FromUiMessage {
+pub enum FromUi {
     InputChanged(String),
     Push(usize),
     Submit,
 }
 #[derive(Debug, Clone)]
-pub enum RpcMessage {
+pub enum FromServer {
     ConnectResult,
     SearchResult(Vec<select::AppInfo>),
     SubmitResult,
@@ -55,58 +47,31 @@ pub enum RpcMessage {
 }
 
 #[derive(Debug, Clone)]
+pub enum ToServer {
+    Connect(tonic::transport::Endpoint),
+    Search {
+        prompt: String,
+        input: String,
+    },
+    Submit {
+        prompt: String,
+        obj_id: u32,
+        hint: Option<String>,
+    },
+    Fill {
+        prompt: String,
+        obj_id: u32,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub enum AppMessage {
-    RpcStart(iced_mpsc::Sender<RpcRequest>),
-    FromRpc(Result<RpcMessage, Error>),
-    ToRpc(RpcRequest),
-    FromUi(FromUiMessage),
+    Start(iced_mpsc::Sender<ToServer>),
+    FromServer(Result<FromServer, Error>),
+    ToServer(ToServer),
+    FromUi(FromUi),
     Error(String),
     UserEvent(iced::Event),
-}
-pub struct Flags {
-    endpoint: transport::Endpoint,
-    // iced_futures::subscription::Recipe
-    recipe: fn() -> Subscription<AppMessage>,
-}
-fn show_help() {
-    println!("Usage: qst [options]");
-    println!("Options:");
-    println!("  -uri <uri>    set uri");
-    println!("  -help         show help");
-}
-impl Flags {
-    pub fn new(args: Vec<String>, recipe: fn() -> Subscription<AppMessage>) -> Self {
-        for (i, arg) in args.iter().enumerate() {
-            match arg.as_str() {
-                "-help" => {
-                    show_help();
-                    std::process::exit(0);
-                }
-                "-uri" => {
-                    if i + 1 < args.len() {
-                        match transport::Channel::from_shared(args[i + 1].clone()) {
-                            Err(e) => {
-                                log::error(format!("invalid uri: {}", e).as_str());
-                                show_help();
-                                std::process::exit(1);
-                            }
-                            Ok(c) => {
-                                log::info(format!("addr: {:#?}", c.uri()).as_str());
-                                return Self {
-                                    endpoint: c,
-                                    recipe: recipe,
-                                };
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        println!("invalid args");
-        show_help();
-        std::process::exit(1);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,16 +107,15 @@ struct CallFrame {
 
 pub struct App {
     input: String,
-    tx: Option<iced_mpsc::Sender<RpcRequest>>,
+    tx: Option<iced_mpsc::Sender<ToServer>>,
     is_connected: bool,
-    endpoint: transport::Endpoint,
     select: select::Select,
     win_size: Size<u32>,
     placeholder: String,
     runstate: Runstate,
     prompt: String,
     callstack: Vec<CallFrame>,
-    recipe: fn() -> Subscription<AppMessage>,
+    flags: flags::Flags,
 }
 
 const WIN_INIT_SIZE: Size<u32> = Size {
@@ -160,7 +124,7 @@ const WIN_INIT_SIZE: Size<u32> = Size {
 };
 
 impl App {
-    fn try_send(&mut self, req: RpcRequest) -> Result<(), iced_mpsc::TrySendError<RpcRequest>> {
+    fn try_send(&mut self, req: ToServer) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
         self.tx.as_mut().unwrap().try_send(req)
     }
 }
@@ -169,7 +133,7 @@ impl iced::Application for App {
     type Executor = iced::executor::Default;
     type Message = AppMessage;
     type Theme = iced::Theme;
-    type Flags = Flags;
+    type Flags = flags::Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
         (
@@ -177,7 +141,6 @@ impl iced::Application for App {
                 tx: None,
                 is_connected: false,
                 input: String::new(),
-                endpoint: flags.endpoint,
                 select: select::Select::new(
                     WIN_INIT_SIZE.height as u16
                         - (TEXT_WIDTH + SPACING * 2)
@@ -190,7 +153,7 @@ impl iced::Application for App {
                 runstate: Runstate::Select,
                 prompt: String::new(),
                 callstack: vec![],
-                recipe: flags.recipe,
+                flags,
             },
             window::resize(WIN_INIT_SIZE),
         )
@@ -202,50 +165,50 @@ impl iced::Application for App {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            AppMessage::RpcStart(tx) => {
+            AppMessage::Start(tx) => {
                 self.tx = Some(tx);
-                let ed = self.endpoint.clone();
+                let ed = self.flags.endpoint.clone();
                 Command::perform(async {}, move |_| {
-                    Self::Message::ToRpc(RpcRequest::Connect(ed))
+                    Self::Message::ToServer(ToServer::Connect(ed))
                 })
             }
-            AppMessage::ToRpc(req) => {
+            AppMessage::ToServer(req) => {
                 if let Err(e) = self.try_send(req.clone()) {
                     log::warn(format!("input failed: {:?}", e).as_str());
                     Command::perform(
                         async {
                             async_sleep(Duration::from_millis(200)).await;
                         },
-                        move |_| Self::Message::ToRpc(req),
+                        move |_| Self::Message::ToServer(req),
                     )
                 } else {
                     Command::none()
                 }
             }
-            AppMessage::FromRpc(result) => match result {
+            AppMessage::FromServer(result) => match result {
                 Ok(msg) => match msg {
-                    RpcMessage::ConnectResult => {
+                    FromServer::ConnectResult => {
                         self.is_connected = true;
                         widget::text_input::focus(text_input::Id::new("i0"))
                     }
-                    RpcMessage::SearchResult(list) => self
+                    FromServer::SearchResult(list) => self
                         .select
                         .update(select::Message::AppInfo(list))
                         .map(convert_select_msg),
-                    RpcMessage::FillResult(content) => {
+                    FromServer::FillResult(content) => {
                         self.input = content;
                         Command::none()
                     }
-                    RpcMessage::SubmitResult => Command::none(),
+                    FromServer::SubmitResult => Command::none(),
                 },
                 Err(_) => Command::none(),
             },
             AppMessage::FromUi(umsg) => match umsg {
-                FromUiMessage::InputChanged(input) => match input.is_empty() {
+                FromUi::InputChanged(input) => match input.is_empty() {
                     true => {
                         self.input.clear();
                         Command::perform(async {}, move |_| {
-                            Self::Message::FromRpc(Ok(RpcMessage::SearchResult(vec![])))
+                            Self::Message::FromServer(Ok(FromServer::SearchResult(vec![])))
                         })
                     }
                     false => {
@@ -257,7 +220,7 @@ impl iced::Application for App {
                                 self.prompt = prompt.clone();
                                 if self.is_connected {
                                     if let Err(e) =
-                                        self.try_send(RpcRequest::Search { prompt, input })
+                                        self.try_send(ToServer::Search { prompt, input })
                                     {
                                         log::warn(format!("search send failed: {:?}", e).as_str());
                                     }
@@ -268,7 +231,7 @@ impl iced::Application for App {
                         Command::none()
                     }
                 },
-                FromUiMessage::Push(idx) => {
+                FromUi::Push(idx) => {
                     log::trace(format!("push: {}", idx).as_str());
 
                     // match self.runstate {
@@ -304,7 +267,7 @@ impl iced::Application for App {
                     // }
                     text_input::focus(text_input::Id::new("i0"))
                 }
-                FromUiMessage::Submit => {
+                FromUi::Submit => {
                     match self.runstate {
                         Runstate::Select => {
                             if let Some(app) = self.select.selected() {
@@ -327,7 +290,7 @@ impl iced::Application for App {
                                 } else if self.callstack.last().unwrap().state
                                     == CallState::NeedArgs
                                 {
-                                    if let Err(e) = self.try_send(RpcRequest::Fill {
+                                    if let Err(e) = self.try_send(ToServer::Fill {
                                         prompt: self.prompt.clone(),
                                         obj_id: app.id,
                                     }) {
@@ -338,7 +301,7 @@ impl iced::Application for App {
                         }
                         Runstate::AddArgs(_) => {
                             let frame = self.callstack.pop().unwrap();
-                            if let Err(e) = self.try_send(RpcRequest::Submit {
+                            if let Err(e) = self.try_send(ToServer::Submit {
                                 obj_id: frame.obj_id,
                                 prompt: frame.prompt,
                                 hint: Some(self.input.clone()),
@@ -404,7 +367,7 @@ impl iced::Application for App {
             iced_futures::subscription::events()
                 .map(Self::Message::UserEvent)
                 .into(),
-            (self.recipe)(),
+            (self.flags.recipe)(),
         ])
     }
     fn view(&self) -> iced::Element<Self::Message> {
@@ -413,9 +376,9 @@ impl iced::Application for App {
                 TEXT_WIDTH as f32,
             )))
             .padding(PADDING)
-            .on_input(|input| AppMessage::FromUi(FromUiMessage::InputChanged(input)))
+            .on_input(|input| AppMessage::FromUi(FromUi::InputChanged(input)))
             .width(iced::Length::Fill)
-            .on_submit(AppMessage::FromUi(FromUiMessage::Submit))
+            .on_submit(AppMessage::FromUi(FromUi::Submit))
             .id(text_input::Id::new("i0"));
         // .direction(
         //     widget::scrollable::Direction::Vertical(),
