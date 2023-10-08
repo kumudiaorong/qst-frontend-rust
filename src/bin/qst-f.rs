@@ -1,12 +1,7 @@
-use qstf::ui;
-
-use iced::Application;
-
 fn main() -> iced::Result {
     xlog_rs::log::init(std::io::stdout());
     xlog_rs::log::set_level(xlog_rs::log::Level::Trace);
-    let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect()));
-    ui::App::run(settings)
+    qstf::run()
     // let mut c = Comm::new("127.0.0.1:50051".to_string()).await;
     // loop {
     //     c.input("hello").await?;

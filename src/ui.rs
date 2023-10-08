@@ -1,6 +1,6 @@
 mod select;
 
-use crate::comm::{self, Request as RpcRequest, Response as RpcResponse};
+use crate::comm::Request as RpcRequest;
 use iced::{
     widget::{self, column, text_input},
     window, Command, Size, Subscription,
@@ -14,6 +14,7 @@ pub const SPACING: u16 = 5;
 pub const PADDING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
 
+pub use select::AppInfo;
 fn convert_select_msg(msg: select::Message) -> AppMessage {
     match msg {
         select::Message::Push(idx) => AppMessage::FromUi(FromUiMessage::Push(idx)),
@@ -45,11 +46,18 @@ pub enum FromUiMessage {
     Push(usize),
     Submit,
 }
+#[derive(Debug, Clone)]
+pub enum RpcMessage {
+    ConnectResult,
+    SearchResult(Vec<select::AppInfo>),
+    SubmitResult,
+    FillResult(String),
+}
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
     RpcStart(iced_mpsc::Sender<RpcRequest>),
-    FromRpc(Result<RpcResponse, comm::error::Error>),
+    FromRpc(Result<RpcMessage, Error>),
     ToRpc(RpcRequest),
     FromUi(FromUiMessage),
     Error(String),
@@ -57,6 +65,8 @@ pub enum AppMessage {
 }
 pub struct Flags {
     endpoint: transport::Endpoint,
+    // iced_futures::subscription::Recipe
+    recipe: fn() -> Subscription<AppMessage>,
 }
 fn show_help() {
     println!("Usage: qst [options]");
@@ -65,7 +75,7 @@ fn show_help() {
     println!("  -help         show help");
 }
 impl Flags {
-    pub fn new(args: Vec<String>) -> Self {
+    pub fn new(args: Vec<String>, recipe: fn() -> Subscription<AppMessage>) -> Self {
         for (i, arg) in args.iter().enumerate() {
             match arg.as_str() {
                 "-help" => {
@@ -82,7 +92,10 @@ impl Flags {
                             }
                             Ok(c) => {
                                 log::info(format!("addr: {:#?}", c.uri()).as_str());
-                                return Self { endpoint: c };
+                                return Self {
+                                    endpoint: c,
+                                    recipe: recipe,
+                                };
                             }
                         }
                     }
@@ -138,6 +151,7 @@ pub struct App {
     runstate: Runstate,
     prompt: String,
     callstack: Vec<CallFrame>,
+    recipe: fn() -> Subscription<AppMessage>,
 }
 
 const WIN_INIT_SIZE: Size<u32> = Size {
@@ -176,6 +190,7 @@ impl iced::Application for App {
                 runstate: Runstate::Select,
                 prompt: String::new(),
                 callstack: vec![],
+                recipe: flags.recipe,
             },
             window::resize(WIN_INIT_SIZE),
         )
@@ -209,28 +224,19 @@ impl iced::Application for App {
             }
             AppMessage::FromRpc(result) => match result {
                 Ok(msg) => match msg {
-                    RpcResponse::ConnectResult => {
+                    RpcMessage::ConnectResult => {
                         self.is_connected = true;
                         widget::text_input::focus(text_input::Id::new("i0"))
                     }
-                    RpcResponse::SearchResult(mut list) => self
+                    RpcMessage::SearchResult(list) => self
                         .select
-                        .update(select::Message::AppInfo(
-                            list.drain(..)
-                                .map(|d| select::AppInfo {
-                                    id: d.id,
-                                    name: d.name,
-                                    arg_hint: d.hint,
-                                    icon: None,
-                                })
-                                .collect(),
-                        ))
+                        .update(select::Message::AppInfo(list))
                         .map(convert_select_msg),
-                    RpcResponse::FillResult(content) => {
+                    RpcMessage::FillResult(content) => {
                         self.input = content;
                         Command::none()
                     }
-                    RpcResponse::SubmitResult => Command::none(),
+                    RpcMessage::SubmitResult => Command::none(),
                 },
                 Err(_) => Command::none(),
             },
@@ -239,7 +245,7 @@ impl iced::Application for App {
                     true => {
                         self.input.clear();
                         Command::perform(async {}, move |_| {
-                            Self::Message::FromRpc(Ok(RpcResponse::SearchResult(vec![])))
+                            Self::Message::FromRpc(Ok(RpcMessage::SearchResult(vec![])))
                         })
                     }
                     false => {
@@ -394,62 +400,11 @@ impl iced::Application for App {
         }
     }
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct SomeSub;
-        enum WorkState {
-            Normal,
-            TrySend(AppMessage),
-        }
-        enum State {
-            Starting,
-            Working(comm::Comm, WorkState),
-        }
         Subscription::batch([
             iced_futures::subscription::events()
                 .map(Self::Message::UserEvent)
                 .into(),
-            iced_futures::subscription::channel(
-                std::any::TypeId::of::<SomeSub>(),
-                1000,
-                |mut output| async move {
-                    let mut state = State::Starting;
-                    loop {
-                        use iced_futures::futures::sink::SinkExt;
-                        match &mut state {
-                            State::Starting => {
-                                // Create channel
-                                let (sender, receiver) = iced_mpsc::channel(1000);
-                                // Send the sender back to the application
-                                // let _ = output.send(Self::Message::Ready(sender)).await;
-                                if let Err(e) = output.send(Self::Message::RpcStart(sender)).await {
-                                    log::warn(format!("send ready failed: {:?}", e).as_str());
-                                } else {
-                                    log::info("subscribe ready");
-                                    state = State::Working(
-                                        comm::Comm::new(receiver),
-                                        WorkState::Normal,
-                                    );
-                                }
-                            }
-                            State::Working(comm, wstate) => match wstate {
-                                WorkState::Normal => {
-                                    // Read next input sent from `Application`
-                                    // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                                    *wstate =
-                                        WorkState::TrySend(AppMessage::FromRpc(comm.next().await));
-                                }
-                                WorkState::TrySend(msg) => {
-                                    if let Err(e) = output.send(msg.clone()).await {
-                                        log::warn(format!("send failed: {:?}", e).as_str());
-                                    } else {
-                                        *wstate = WorkState::Normal;
-                                    }
-                                }
-                            },
-                        }
-                    }
-                },
-            )
-            .into(),
+            (self.recipe)(),
         ])
     }
     fn view(&self) -> iced::Element<Self::Message> {
