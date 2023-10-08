@@ -127,6 +127,18 @@ impl App {
     fn try_send(&mut self, req: ToServer) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
         self.tx.as_mut().unwrap().try_send(req)
     }
+    fn submit(
+        &mut self,
+        prompt: String,
+        obj_id: u32,
+        hint: Option<String>,
+    ) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
+        self.try_send(ToServer::Submit {
+            prompt,
+            obj_id,
+            hint,
+        })
+    }
 }
 
 impl iced::Application for App {
@@ -301,11 +313,9 @@ impl iced::Application for App {
                         }
                         Runstate::AddArgs(_) => {
                             let frame = self.callstack.pop().unwrap();
-                            if let Err(e) = self.try_send(ToServer::Submit {
-                                obj_id: frame.obj_id,
-                                prompt: frame.prompt,
-                                hint: Some(self.input.clone()),
-                            }) {
+                            if let Err(e) =
+                                self.submit(frame.prompt, frame.obj_id, Some(self.input.clone()))
+                            {
                                 log::warn(format!("input failed: {:?}", e).as_str());
                             }
                         }
