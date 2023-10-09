@@ -21,6 +21,6 @@ tonic = "0.9.2"
 prost = "0.11"
 tokio = { version = "1.0", features = ["full"] }
 iced_futures = "0.7.0"
-xlog-rs = { path = "./xlog-rs" }
+xlog-rs = "0.1.0"
 [build-dependencies]
 tonic-build = { version = "0.9.2", features = ["prost"] }

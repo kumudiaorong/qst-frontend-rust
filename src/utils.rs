@@ -2,7 +2,7 @@ use crate::rpc;
 use crate::ui;
 pub fn convert_ui_to_server(ui: ui::ToServer) -> rpc::Request {
     match ui {
-        ui::ToServer::Connect(endpoint) => rpc::Request::Connect(endpoint.clone()),
+        ui::ToServer::Connect(endpoint) => rpc::Request::Connect(endpoint),
         ui::ToServer::Search { prompt, content } => rpc::Request::Search {
             prompt,
             input: rpc::Input { content },
@@ -19,8 +19,8 @@ pub fn convert_ui_to_server(ui: ui::ToServer) -> rpc::Request {
 }
 pub fn convert_server_to_ui(server: rpc::Response) -> ui::FromServer {
     match server {
-        rpc::Response::Connected => ui::FromServer::ConnectResult,
-        rpc::Response::Search(mut displays) => ui::FromServer::SearchResult(
+        rpc::Response::Connected => ui::FromServer::Connected,
+        rpc::Response::Search(mut displays) => ui::FromServer::Search(
             displays
                 .drain(..)
                 .map(|d| ui::Item {
@@ -31,7 +31,7 @@ pub fn convert_server_to_ui(server: rpc::Response) -> ui::FromServer {
                 })
                 .collect(),
         ),
-        rpc::Response::Submit => ui::FromServer::SubmitResult,
+        rpc::Response::Submit => ui::FromServer::Submit,
         // rpc::Response::FillResult(fill) => {
         //     ui::FromServer::FillResult(fill)
         // }

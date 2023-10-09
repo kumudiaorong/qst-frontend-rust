@@ -8,7 +8,7 @@ use xlog_rs::log;
 
 const MAX_TRY_SEND: usize = 3;
 
-fn subs() -> iced_futures::Subscription<ui::Message> {
+fn connect() -> iced_futures::Subscription<ui::Message> {
     struct SomeSub;
     enum State {
         Starting,
@@ -85,6 +85,6 @@ fn subs() -> iced_futures::Subscription<ui::Message> {
     )
 }
 pub fn run() -> iced::Result {
-    let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect(), subs));
+    let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect(), connect));
     ui::App::run(settings)
 }
