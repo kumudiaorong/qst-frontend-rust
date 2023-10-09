@@ -1,11 +1,11 @@
-use super::AppMessage;
+use super::Message;
 use iced_futures::subscription::Subscription;
 use tonic::transport;
 use xlog_rs::log;
 pub struct Flags {
     pub endpoint: transport::Endpoint,
     // iced_futures::subscription::Recipe
-    pub recipe: fn() -> Subscription<AppMessage>,
+    pub recipe: fn() -> Subscription<Message>,
 }
 fn show_help() {
     println!("Usage: qst [options]");
@@ -14,7 +14,7 @@ fn show_help() {
     println!("  -help         show help");
 }
 impl Flags {
-    pub fn new(args: Vec<String>, recipe: fn() -> Subscription<AppMessage>) -> Self {
+    pub fn new(args: Vec<String>, recipe: fn() -> Subscription<Message>) -> Self {
         for (i, arg) in args.iter().enumerate() {
             match arg.as_str() {
                 "-help" => {

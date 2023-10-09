@@ -22,36 +22,28 @@ impl ExtService {
         )
         .await
     }
-    pub async fn search(&mut self, keyword: &str) -> Result<Vec<Display>, super::error::Error> {
+    pub async fn search(&mut self, input: Input) -> Result<Vec<Display>, super::error::Error> {
         utils::match_grpc_result(
             "search",
-            self.inner
-                .search(Input {
-                    content: keyword.to_string(),
-                })
-                .await,
+            self.inner.search(input).await,
             |resp| resp.status,
             |resp| resp.display_list.unwrap().list,
         )
     }
-    pub async fn submit(
-        &mut self,
-        obj_id: u32,
-        hint: Option<String>,
-    ) -> Result<(), super::error::Error> {
+    pub async fn submit(&mut self, hint: SubmitHint) -> Result<(), super::error::Error> {
         utils::match_grpc_result(
             "submit",
-            self.inner.submit(SubmitHint { obj_id, hint }).await,
+            self.inner.submit(hint).await,
             |resp| resp.status,
             |_| (),
         )
     }
-    pub async fn fill(&mut self, obj_id: u32) -> Result<String, super::error::Error> {
-        utils::match_grpc_result(
-            "fill",
-            self.inner.fill(FillHint { obj_id }).await,
-            |resp| resp.status,
-            |resp| resp.content,
-        )
-    }
+    // pub async fn fill(&mut self, obj_id: u32) -> Result<String, super::error::Error> {
+    //     utils::match_grpc_result(
+    //         "fill",
+    //         self.inner.fill(FillHint { obj_id }).await,
+    //         |resp| resp.status,
+    //         |resp| resp.content,
+    //     )
+    // }
 }

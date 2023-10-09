@@ -14,9 +14,9 @@ pub const PADDING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
 
 pub use select::AppInfo;
-fn convert_select_msg(msg: select::Message) -> AppMessage {
+fn convert_select_msg(msg: select::Message) -> Message {
     match msg {
-        select::Message::Push(idx) => AppMessage::FromUi(FromUi::Push(idx)),
+        select::Message::Push(idx) => Message::FromUi(FromUi::Push(idx)),
         _ => todo!("convert select msg"),
     }
 }
@@ -51,21 +51,21 @@ pub enum ToServer {
     Connect(tonic::transport::Endpoint),
     Search {
         prompt: String,
-        input: String,
+        content: String,
     },
     Submit {
         prompt: String,
         obj_id: u32,
         hint: Option<String>,
     },
-    Fill {
-        prompt: String,
-        obj_id: u32,
-    },
+    // Fill {
+    //     prompt: String,
+    //     obj_id: u32,
+    // },
 }
 
 #[derive(Debug, Clone)]
-pub enum AppMessage {
+pub enum Message {
     Start(iced_mpsc::Sender<ToServer>),
     FromServer(Result<FromServer, Error>),
     ToServer(ToServer),
@@ -77,7 +77,11 @@ pub enum AppMessage {
 #[derive(Debug, Clone, PartialEq)]
 enum Runstate {
     Select,
-    AddArgs(String), //input
+    AddArgs {
+        placeholder: String,
+        input: String,
+        obj_id: u32,
+    },
 }
 
 fn extract_prompt(s: &str) -> Option<(String, String)> {
@@ -92,19 +96,6 @@ fn extract_prompt(s: &str) -> Option<(String, String)> {
     }
     return Some((String::new(), s.to_string()));
 }
-#[derive(Debug, PartialEq)]
-enum CallState {
-    None,
-    NeedArgs,
-    NeedUser,
-}
-
-struct CallFrame {
-    state: CallState,
-    obj_id: u32,
-    prompt: String,
-}
-
 pub struct App {
     input: String,
     tx: Option<iced_mpsc::Sender<ToServer>>,
@@ -114,7 +105,6 @@ pub struct App {
     placeholder: String,
     runstate: Runstate,
     prompt: String,
-    callstack: Vec<CallFrame>,
     flags: flags::Flags,
 }
 
@@ -129,21 +119,33 @@ impl App {
     }
     fn submit(
         &mut self,
-        prompt: String,
+        prompt: impl ToString,
         obj_id: u32,
         hint: Option<String>,
     ) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
         self.try_send(ToServer::Submit {
-            prompt,
+            prompt: prompt.to_string(),
             obj_id,
             hint,
         })
+    }
+    fn try_reload(&mut self) {
+        if let Runstate::AddArgs {
+            placeholder,
+            input,
+            obj_id: _,
+        } = &mut self.runstate
+        {
+            std::mem::swap(&mut self.input, input);
+            std::mem::swap(&mut self.placeholder, placeholder);
+            self.runstate = Runstate::Select;
+        }
     }
 }
 
 impl iced::Application for App {
     type Executor = iced::executor::Default;
-    type Message = AppMessage;
+    type Message = Message;
     type Theme = iced::Theme;
     type Flags = flags::Flags;
 
@@ -164,7 +166,6 @@ impl iced::Application for App {
                 placeholder: "app name".to_string(),
                 runstate: Runstate::Select,
                 prompt: String::new(),
-                callstack: vec![],
                 flags,
             },
             window::resize(WIN_INIT_SIZE),
@@ -177,14 +178,14 @@ impl iced::Application for App {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            AppMessage::Start(tx) => {
+            Message::Start(tx) => {
                 self.tx = Some(tx);
                 let ed = self.flags.endpoint.clone();
                 Command::perform(async {}, move |_| {
                     Self::Message::ToServer(ToServer::Connect(ed))
                 })
             }
-            AppMessage::ToServer(req) => {
+            Message::ToServer(req) => {
                 if let Err(e) = self.try_send(req.clone()) {
                     log::warn(format!("input failed: {:?}", e).as_str());
                     Command::perform(
@@ -197,7 +198,7 @@ impl iced::Application for App {
                     Command::none()
                 }
             }
-            AppMessage::FromServer(result) => match result {
+            Message::FromServer(result) => match result {
                 Ok(msg) => match msg {
                     FromServer::ConnectResult => {
                         self.is_connected = true;
@@ -215,7 +216,7 @@ impl iced::Application for App {
                 },
                 Err(_) => Command::none(),
             },
-            AppMessage::FromUi(umsg) => match umsg {
+            Message::FromUi(umsg) => match umsg {
                 FromUi::InputChanged(input) => match input.is_empty() {
                     true => {
                         self.input.clear();
@@ -226,13 +227,13 @@ impl iced::Application for App {
                     false => {
                         self.input = input;
                         match extract_prompt(self.input.as_str()) {
-                            Some((prompt, input))
+                            Some((prompt, content))
                                 if self.runstate == Runstate::Select || prompt != self.prompt =>
                             {
                                 self.prompt = prompt.clone();
                                 if self.is_connected {
                                     if let Err(e) =
-                                        self.try_send(ToServer::Search { prompt, input })
+                                        self.try_send(ToServer::Search { prompt, content })
                                     {
                                         log::warn(format!("search send failed: {:?}", e).as_str());
                                     }
@@ -283,38 +284,22 @@ impl iced::Application for App {
                     match self.runstate {
                         Runstate::Select => {
                             if let Some(app) = self.select.selected() {
-                                self.runstate = Runstate::AddArgs(std::mem::replace(
-                                    &mut self.input,
-                                    String::new(),
-                                ));
-                                if self.callstack.is_empty() {
-                                    self.callstack.push(CallFrame {
-                                        state: if app.arg_hint.is_some() {
-                                            CallState::NeedArgs
-                                        } else {
-                                            CallState::None
-                                        },
-                                        obj_id: app.id,
-                                        prompt: self.prompt.clone(),
-                                    });
-                                    self.placeholder =
-                                        app.arg_hint.clone().unwrap_or("none args".to_string());
-                                } else if self.callstack.last().unwrap().state
-                                    == CallState::NeedArgs
-                                {
-                                    if let Err(e) = self.try_send(ToServer::Fill {
-                                        prompt: self.prompt.clone(),
-                                        obj_id: app.id,
-                                    }) {
-                                        log::warn(format!("input failed: {:?}", e).as_str());
-                                    }
-                                }
+                                self.runstate = Runstate::AddArgs {
+                                    placeholder: "[prompt]content".to_string(),
+                                    input: std::mem::replace(&mut self.input, String::new()),
+                                    obj_id: app.id,
+                                };
+                                self.placeholder =
+                                    app.arg_hint.clone().unwrap_or("none args".to_string());
                             }
                         }
-                        Runstate::AddArgs(_) => {
-                            let frame = self.callstack.pop().unwrap();
+                        Runstate::AddArgs {
+                            placeholder: _,
+                            input: _,
+                            obj_id,
+                        } => {
                             if let Err(e) =
-                                self.submit(frame.prompt, frame.obj_id, Some(self.input.clone()))
+                                self.submit(self.prompt.clone(), obj_id, Some(self.input.clone()))
                             {
                                 log::warn(format!("input failed: {:?}", e).as_str());
                             }
@@ -346,21 +331,13 @@ impl iced::Application for App {
                         key_code, ..
                     }) => match key_code {
                         iced::keyboard::KeyCode::Up => {
-                            if let Runstate::AddArgs(input) = &mut self.runstate {
-                                std::mem::swap(&mut self.input, input);
-                                self.runstate = Runstate::Select;
-                                self.placeholder = "app name".to_string();
-                            }
+                            self.try_reload();
                             self.select
                                 .update(select::Message::Up)
                                 .map(convert_select_msg)
                         }
                         iced::keyboard::KeyCode::Down => {
-                            if let Runstate::AddArgs(input) = &mut self.runstate {
-                                std::mem::swap(&mut self.input, input);
-                                self.runstate = Runstate::Select;
-                                self.placeholder = "app name".to_string();
-                            }
+                            self.try_reload();
                             self.select
                                 .update(select::Message::Down)
                                 .map(convert_select_msg)
@@ -386,9 +363,9 @@ impl iced::Application for App {
                 TEXT_WIDTH as f32,
             )))
             .padding(PADDING)
-            .on_input(|input| AppMessage::FromUi(FromUi::InputChanged(input)))
+            .on_input(|input| Message::FromUi(FromUi::InputChanged(input)))
             .width(iced::Length::Fill)
-            .on_submit(AppMessage::FromUi(FromUi::Submit))
+            .on_submit(Message::FromUi(FromUi::Submit))
             .id(text_input::Id::new("i0"));
         // .direction(
         //     widget::scrollable::Direction::Vertical(),
