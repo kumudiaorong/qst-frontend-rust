@@ -40,11 +40,11 @@ pub enum Response {
 
 pub const MAX_TRY_CONNECT: usize = 3;
 
-pub struct Service {
+pub struct Server {
     dae: Option<daemon::DaemonService>,
     ext: std::collections::HashMap<String, ext::ExtService>,
 }
-impl Service {
+impl Server {
     pub fn new() -> Self {
         Self {
             dae: None,

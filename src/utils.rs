@@ -23,8 +23,8 @@ pub fn convert_server_to_ui(server: rpc::Response) -> ui::FromServer {
         rpc::Response::Search(mut displays) => ui::FromServer::SearchResult(
             displays
                 .drain(..)
-                .map(|d| ui::AppInfo {
-                    id: d.id,
+                .map(|d| ui::Item {
+                    obj_id: d.obj_id,
                     name: d.name,
                     arg_hint: d.hint,
                     icon: None,

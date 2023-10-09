@@ -1,12 +1,13 @@
 use iced::widget::{self, scrollable};
+// use xlog_rs::log;
 
 const SELECT_ID: &str = "s0";
 pub const SPACING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
 
 #[derive(std::fmt::Debug, Clone)]
-pub struct AppInfo {
-    pub id: u32,
+pub struct Item {
+    pub obj_id: u32,
     pub name: String,
     pub arg_hint: Option<String>,
     pub icon: Option<String>,
@@ -14,22 +15,23 @@ pub struct AppInfo {
 #[derive(std::fmt::Debug, Clone)]
 pub enum Message {
     Height(u16),
-    AppInfo(Vec<AppInfo>),
+    Refresh(Vec<Item>),
     Up,
     Down,
-    Push(usize),
+    Push { idx: usize, obj_id: u32 },
+    Scroll(f32),
 }
 pub type Flags = u16;
 
 pub struct Select {
     id: scrollable::Id,
-    apps: Vec<AppInfo>,
+    apps: Vec<Item>,
     selected_index: usize,
     height: u16,
     scroll_start: u16,
 }
 impl Select {
-    pub fn selected(&self) -> Option<&AppInfo> {
+    pub fn selected(&self) -> Option<&Item> {
         self.apps.get(self.selected_index)
     }
     fn check_scroll(&mut self) -> iced::Command<Message> {
@@ -81,7 +83,7 @@ impl Select {
                 self.height = h;
                 self.check_scroll()
             }
-            Message::AppInfo(apps) => {
+            Message::Refresh(apps) => {
                 self.apps = apps;
                 self.selected_index = 0;
                 scrollable::snap_to(self.id.clone(), scrollable::RelativeOffset::START)
@@ -101,9 +103,13 @@ impl Select {
                     self.check_scroll()
                 }
             }
-            Message::Push(i) => {
-                self.selected_index = i;
+            Message::Push { idx, .. } => {
+                self.selected_index = idx;
                 self.check_scroll()
+            }
+            Message::Scroll(y) => {
+                self.scroll_start = y as u16;
+                iced::Command::none()
             }
         }
     }
@@ -114,17 +120,20 @@ impl Select {
                 self.apps
                     .iter()
                     .enumerate()
-                    .map(|(i, r)| {
+                    .map(|(idx, item)| {
                         // log::warn(format!("button: {}", r.name).as_str());
-                        widget::button(widget::text(r.name.as_str()).width(iced::Length::Fill))
+                        widget::button(widget::text(item.name.as_str()).width(iced::Length::Fill))
                             .height(TEXT_WIDTH)
                             .width(iced::Length::Fill)
-                            .style(if i == self.selected_index {
+                            .style(if idx == self.selected_index {
                                 iced::theme::Button::Primary
                             } else {
                                 iced::theme::Button::Secondary
                             })
-                            .on_press(Message::Push(i))
+                            .on_press(Message::Push {
+                                idx,
+                                obj_id: item.obj_id,
+                            })
                             .into()
                     })
                     .collect::<Vec<_>>(),
@@ -132,6 +141,10 @@ impl Select {
             .spacing(SPACING),
         )
         .id(self.id.clone())
+        .on_scroll(|v| {
+            // log::debug(format!("scroll: {:#?}", v).as_str());
+            Message::Scroll(v.absolute_offset().y)
+        })
         .into()
     }
 }
