@@ -1,34 +1,36 @@
 mod flags;
-mod select;
 pub use flags::Flags;
+
+mod select;
+pub use select::Item;
+
+mod utils;
+
+mod error;
+pub use error::Error;
+
 use iced::{
     widget::{self, column, text_input},
     window, Command, Size, Subscription,
 };
+
 use iced_futures::futures::channel::mpsc as iced_mpsc;
-use tokio::time::{sleep as async_sleep, Duration};
+
 use xlog_rs::log;
 
 pub const SPACING: u16 = 5;
 pub const PADDING: u16 = 5;
 pub const TEXT_WIDTH: u16 = 35;
 
-pub use select::Item;
+const WIN_INIT_SIZE: Size<u32> = Size {
+    width: 300,
+    height: 245,
+};
+
 fn convert_select_msg(msg: select::Message) -> Message {
     Message::FromUi(FromUi::Select(msg))
 }
 
-#[derive(Debug, Clone)]
-pub struct Error {
-    msg: String,
-}
-impl Error {
-    pub fn from(msg: impl ToString) -> Self {
-        Self {
-            msg: msg.to_string(),
-        }
-    }
-}
 #[derive(Debug, Clone)]
 pub enum FromUi {
     InputChanged(String),
@@ -80,34 +82,16 @@ enum Runstate {
     },
 }
 
-fn extract_prompt(s: &str) -> Option<(String, String)> {
-    if s.starts_with('|') {
-        let mut iter = s[1..].splitn(2, '|');
-        if let Some(prompt) = iter.next() {
-            if let Some(content) = iter.next() {
-                return Some((prompt.to_string(), content.to_string()));
-            }
-        }
-        return None;
-    }
-    return Some((String::new(), s.to_string()));
-}
 pub struct App {
-    input: String,
+    flags: flags::Flags,
     tx: Option<iced_mpsc::Sender<ToServer>>,
-    is_connected: bool,
     select: select::Select,
     win_size: Size<u32>,
     placeholder: String,
-    runstate: Runstate,
+    input: String,
     prompt: String,
-    flags: flags::Flags,
+    runstate: Runstate,
 }
-
-const WIN_INIT_SIZE: Size<u32> = Size {
-    width: 300,
-    height: 245,
-};
 
 impl App {
     fn try_send(&mut self, req: ToServer) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
@@ -116,30 +100,23 @@ impl App {
     fn select(&mut self) {
         if let Some(item) = self.select.selected() {
             self.runstate = Runstate::AddArgs {
-                placeholder: "[prompt]content".to_string(),
+                placeholder: std::mem::replace(&mut self.placeholder, String::new()),
                 input: std::mem::replace(&mut self.input, String::new()),
                 obj_id: item.obj_id,
             };
             self.placeholder = item.arg_hint.clone().unwrap_or("none args".to_string());
         }
     }
-    fn submit(
-        &mut self,
-        prompt: impl ToString,
-        obj_id: u32,
-        hint: Option<String>,
-    ) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
+    fn submit(&mut self, obj_id: u32) -> Result<(), iced_mpsc::TrySendError<ToServer>> {
         self.try_send(ToServer::Submit {
-            prompt: prompt.to_string(),
+            prompt: self.prompt.clone(),
             obj_id,
-            hint,
+            hint: Some(self.input.clone()),
         })
     }
     fn try_reload(&mut self) {
         if let Runstate::AddArgs {
-            placeholder,
-            input,
-            obj_id: _,
+            placeholder, input, ..
         } = &mut self.runstate
         {
             std::mem::swap(&mut self.input, input);
@@ -156,25 +133,21 @@ impl iced::Application for App {
     type Flags = flags::Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let (select, cmd) = select::Select::new(
+            WIN_INIT_SIZE.height as u16 - (TEXT_WIDTH + SPACING * 2) - (PADDING * 2) - SPACING,
+        );
         (
             Self {
                 tx: None,
-                is_connected: false,
                 input: String::new(),
-                select: select::Select::new(
-                    WIN_INIT_SIZE.height as u16
-                        - (TEXT_WIDTH + SPACING * 2)
-                        - (PADDING * 2)
-                        - SPACING,
-                )
-                .0,
+                select,
                 win_size: WIN_INIT_SIZE,
-                placeholder: "app name".to_string(),
+                placeholder: "[prompt]content".to_string(),
                 runstate: Runstate::Select,
                 prompt: String::new(),
                 flags,
             },
-            window::resize(WIN_INIT_SIZE),
+            Command::batch([window::resize(WIN_INIT_SIZE), cmd.map(convert_select_msg)]),
         )
     }
 
@@ -184,31 +157,30 @@ impl iced::Application for App {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            Message::Start(tx) => {
+            Self::Message::Start(tx) => {
                 self.tx = Some(tx);
                 let ed = self.flags.endpoint.clone();
                 Command::perform(async {}, move |_| {
                     Self::Message::ToServer(ToServer::Connect(ed))
                 })
             }
-            Message::ToServer(req) => match self.try_send(req.clone()) {
+            Self::Message::ToServer(req) => match self.try_send(req.clone()) {
                 Err(e) => {
                     log::warn(format!("input failed: {:?}", e).as_str());
                     Command::perform(
                         async {
-                            async_sleep(Duration::from_millis(200)).await;
+                            // use tokio::time::{sleep as async_sleep, Duration};
+                            // async_sleep(Duration::from_millis(200)).await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                         },
                         move |_| Self::Message::ToServer(req),
                     )
                 }
                 _ => Command::none(),
             },
-            Message::FromServer(result) => match result {
+            Self::Message::FromServer(result) => match result {
                 Ok(msg) => match msg {
-                    FromServer::Connected => {
-                        self.is_connected = true;
-                        widget::text_input::focus(text_input::Id::new("i0"))
-                    }
+                    FromServer::Connected => text_input::focus(text_input::Id::new("i0")),
                     FromServer::Search(list) => self
                         .select
                         .update(select::Message::Refresh(list))
@@ -217,57 +189,47 @@ impl iced::Application for App {
                     //     self.input = content;
                     //     Command::none()
                     // }
-                    FromServer::Submit => Command::none(),
+                    FromServer::Submit => {
+                        std::process::exit(0);
+                    }
                 },
                 Err(_) => Command::none(),
             },
-            Message::FromUi(umsg) => match umsg {
-                FromUi::InputChanged(input) => match input.is_empty() {
-                    true => {
+            Self::Message::FromUi(umsg) => match umsg {
+                FromUi::InputChanged(input) => {
+                    if input.is_empty() {
                         self.input.clear();
                         Command::perform(async {}, move |_| {
                             Self::Message::FromServer(Ok(FromServer::Search(vec![])))
                         })
-                    }
-                    false => {
+                    } else {
                         self.input = input;
-                        match extract_prompt(self.input.as_str()) {
+                        match utils::extract_prompt(self.input.as_str()) {
                             Some((prompt, content))
                                 if self.runstate == Runstate::Select || prompt != self.prompt =>
                             {
                                 self.prompt = prompt.clone();
-                                if self.is_connected {
-                                    if let Err(e) =
-                                        self.try_send(ToServer::Search { prompt, content })
-                                    {
-                                        log::warn(format!("search send failed: {:?}", e).as_str());
-                                    }
+                                if let Err(e) = self.try_send(ToServer::Search { prompt, content })
+                                {
+                                    log::warn(format!("search send failed: {:?}", e).as_str());
                                 }
                             }
                             _ => {}
                         }
                         Command::none()
                     }
-                },
+                }
                 FromUi::Select(smsg) => {
                     let cmd = self.select.update(smsg.clone()).map(convert_select_msg);
                     match smsg {
-                        select::Message::Push { obj_id, .. } => match &self.runstate {
+                        select::Message::Push { obj_id: sid, .. } => match &self.runstate {
                             Runstate::Select => {
                                 self.select();
                             }
-                            Runstate::AddArgs {
-                                placeholder: _,
-                                input: _,
-                                obj_id: sid,
-                            } => {
+                            Runstate::AddArgs { obj_id, .. } => {
                                 // let item = self.select.selected().unwrap();
-                                if obj_id == *sid {
-                                    if let Err(e) = self.submit(
-                                        self.prompt.clone(),
-                                        obj_id,
-                                        Some(self.input.clone()),
-                                    ) {
+                                if sid == *obj_id {
+                                    if let Err(e) = self.submit(sid) {
                                         log::warn(format!("input failed: {:?}", e).as_str());
                                     }
                                 } else {
@@ -284,14 +246,8 @@ impl iced::Application for App {
                         Runstate::Select => {
                             self.select();
                         }
-                        Runstate::AddArgs {
-                            placeholder: _,
-                            input: _,
-                            obj_id,
-                        } => {
-                            if let Err(e) =
-                                self.submit(self.prompt.clone(), obj_id, Some(self.input.clone()))
-                            {
+                        Runstate::AddArgs { obj_id, .. } => {
+                            if let Err(e) = self.submit(obj_id) {
                                 log::warn(format!("input failed: {:?}", e).as_str());
                             }
                         }
@@ -302,33 +258,29 @@ impl iced::Application for App {
             Self::Message::UserEvent(e) => match e {
                 iced::Event::Window(iced::window::Event::Resized { width, height }) => {
                     self.win_size = Size { width, height };
-                    self.select
-                        .update(select::Message::Height(
-                            (height as u16)
-                                .checked_sub((TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING)
-                                .unwrap_or(0),
-                        ))
-                        .map(convert_select_msg)
+                    self.select.update(select::Message::Height(
+                        (height as u16)
+                            .checked_sub((TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING)
+                            .unwrap_or(0),
+                    ))
                 }
                 iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
                     match key_code {
                         iced::keyboard::KeyCode::Up => {
                             self.try_reload();
-                            self.select
-                                .update(select::Message::Up)
-                                .map(convert_select_msg)
+                            self.select.update(select::Message::Up)
                         }
                         iced::keyboard::KeyCode::Down => {
                             self.try_reload();
-                            self.select
-                                .update(select::Message::Down)
-                                .map(convert_select_msg)
+                            self.select.update(select::Message::Down)
                         }
                         _ => Command::none(),
                     }
                 }
+
                 _ => Command::none(),
-            },
+            }
+            .map(convert_select_msg),
         }
     }
     fn subscription(&self) -> Subscription<Self::Message> {
@@ -340,14 +292,14 @@ impl iced::Application for App {
         ])
     }
     fn view(&self) -> iced::Element<Self::Message> {
-        let input = widget::text_input(&self.placeholder, self.input.as_str())
+        let input = text_input(&self.placeholder, self.input.as_str())
             .line_height(widget::text::LineHeight::Absolute(iced::Pixels(
                 TEXT_WIDTH as f32,
             )))
             .padding(PADDING)
-            .on_input(|input| Message::FromUi(FromUi::InputChanged(input)))
+            .on_input(|input| Self::Message::FromUi(FromUi::InputChanged(input)))
             .width(iced::Length::Fill)
-            .on_submit(Message::FromUi(FromUi::Submit))
+            .on_submit(Self::Message::FromUi(FromUi::Submit))
             .id(text_input::Id::new("i0"));
         column!(input, self.select.view().map(convert_select_msg))
             .spacing(SPACING)

@@ -1,5 +1,6 @@
 use crate::rpc;
 use crate::ui;
+
 pub fn convert_ui_to_server(ui: ui::ToServer) -> rpc::Request {
     match ui {
         ui::ToServer::Connect(endpoint) => rpc::Request::Connect(endpoint),
