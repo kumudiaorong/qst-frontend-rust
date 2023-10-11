@@ -4,6 +4,8 @@ pub use flags::Flags;
 mod select;
 pub use select::Item;
 
+mod setup;
+
 mod utils;
 
 mod error;

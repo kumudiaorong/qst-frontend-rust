@@ -55,12 +55,19 @@ impl Server {
         match req {
             Request::Connect(endpoint) => {
                 log::debug(format!("connect to {:?}", endpoint).as_str());
-                daemon::DaemonService::connect(MAX_TRY_CONNECT as u32, endpoint.clone())
-                    .await
-                    .map(|dae| {
-                        self.dae = Some(dae);
-                        Response::Connected
-                    })
+                let mut dae =
+                    daemon::DaemonService::connect(MAX_TRY_CONNECT as u32, endpoint.clone())
+                        .await?;
+                for (k, f) in dae
+                    .set_up()
+                    .await?
+                    .into_iter()
+                    .map(|(k, v)| (k, ext::ExtService::with_port(MAX_TRY_CONNECT as u32, v)))
+                {
+                    self.ext.insert(k, f.await?);
+                }
+                self.dae = Some(dae);
+                Ok(Response::Connected)
             }
             Request::Search { prompt, input } => {
                 log::debug(format!("search {} with {:#?}", prompt, input).as_str());

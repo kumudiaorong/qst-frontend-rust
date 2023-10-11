@@ -15,11 +15,19 @@ impl DaemonService {
             ),
         })
     }
+    pub async fn set_up(&mut self) -> Result<std::collections::HashMap<String, String>, Error> {
+        utils::match_grpc_result(
+            "set up",
+            self.inner.set_up(super::defs::Empty {}).await,
+            |resp| resp.status,
+            |resp| resp.running,
+        )
+    }
     pub async fn get_ext_port(&mut self, prompt: &str) -> Result<String, Error> {
         utils::match_grpc_result(
             "get ext port",
             self.inner
-                .get_ext_port(Prompt {
+                .get_ext_addr(Prompt {
                     content: prompt.to_string(),
                 })
                 .await,
