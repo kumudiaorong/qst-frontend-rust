@@ -10,7 +10,7 @@
     },
     "doxdocgen.generic.authorName": "kumudiaorong",
     "doxdocgen.generic.authorEmail": "kmdr.error@gmail.com",
-    "window.zoomLevel": 1,
+    "window.zoomLevel": 2,
     "protoc": {
         "path": "protoc",
         "compile_on_save": false,
@@ -20,5 +20,11 @@
             "--proto_path=${workspaceRoot}/qst-proto/src",
             "--proto_path=${env.GOPATH}/src",
         ]
-    }
+    },
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml",
+        "./Cargo.toml",
+        "./Cargo.toml",
+        "./Cargo.toml"
+    ]
 }

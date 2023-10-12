@@ -44,16 +44,11 @@ fn connect() -> iced_futures::Subscription<ui::Message> {
                         use iced_futures::futures::StreamExt;
                         states.push(State::TrySend {
                             msg: ui::Message::FromServer(
-                                server
-                                    .request(utils::convert_ui_to_server(
-                                        rx.as_mut().unwrap().select_next_some().await,
-                                    ))
-                                    .await
-                                    .map(utils::convert_server_to_ui)
-                                    .map_err(|e| {
-                                        log::warn(format!("rpc error: {:?}", e).as_str());
-                                        ui::Error::from(e)
-                                    }),
+                                utils::convert(
+                                    rx.as_mut().unwrap().select_next_some().await,
+                                    &mut server,
+                                )
+                                .await,
                             ),
                             action: || State::TryRecv,
                             cnt: 0,

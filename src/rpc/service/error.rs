@@ -7,14 +7,19 @@ impl std::fmt::Display for Error {
         f.write_str(self.msg.as_str())
     }
 }
+impl From<&str> for Error {
+    fn from(s: &str) -> Self {
+        Self::new(s.to_string())
+    }
+}
 impl From<String> for Error {
     fn from(s: String) -> Self {
         Self::new(s)
     }
 }
-impl From<super::service::Error> for Error {
-    fn from(e: super::service::Error) -> Self {
-        Self::new(e.msg)
+impl From<tonic::Status> for Error {
+    fn from(s: tonic::Status) -> Self {
+        Self::new(s.to_string())
     }
 }
 impl Error {

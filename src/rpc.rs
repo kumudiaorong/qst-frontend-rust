@@ -1,108 +1,64 @@
-pub mod defs {
-    tonic::include_proto!("defs");
-}
+pub mod defs;
 
 pub mod daemon;
 pub mod error;
-pub mod ext;
+pub mod extension;
+mod response;
+pub use response::Response;
+mod service;
 mod utils;
-
-pub use ext::DisplayList;
-pub use ext::Input;
-pub use ext::SubmitHint;
-
+use daemon::Service as DaemonService;
+pub use extension::DisplayList;
+pub use extension::Input;
+use extension::Service as ExtService;
+pub use extension::SubmitHint;
+use service::Service;
 use xlog_rs::log;
-
-#[derive(Debug, Clone)]
-pub enum Request {
-    Connect(tonic::transport::Endpoint),
-    Search {
-        prompt: String,
-        input: ext::Input,
-    },
-    Submit {
-        prompt: String,
-        hint: ext::SubmitHint,
-    },
-    // Fill {
-    //     prompt: String,
-    //     obj_id: u32,
-    // },
-}
-
-#[derive(Debug, Clone)]
-pub enum Response {
-    Connected,
-    Search(Vec<ext::Display>),
-    Submit,
-    // FillResult(String),
-}
 
 pub const MAX_TRY_CONNECT: usize = 3;
 
 pub struct Server {
-    dae: Option<daemon::DaemonService>,
-    ext: std::collections::HashMap<String, ext::ExtService>,
+    dae: Option<DaemonService>,
+    exts: std::collections::HashMap<String, ExtService>,
 }
 impl Server {
     pub fn new() -> Self {
         Self {
             dae: None,
-            ext: std::collections::HashMap::new(),
+            exts: std::collections::HashMap::new(),
         }
     }
-    pub async fn request(&mut self, req: Request) -> Result<Response, error::Error> {
-        match req {
-            Request::Connect(endpoint) => {
-                log::debug(format!("connect to {:?}", endpoint).as_str());
-                let mut dae =
-                    daemon::DaemonService::connect(MAX_TRY_CONNECT as u32, endpoint.clone())
-                        .await?;
-                for (k, f) in dae
-                    .set_up()
-                    .await?
-                    .into_iter()
-                    .map(|(k, v)| (k, ext::ExtService::with_port(MAX_TRY_CONNECT as u32, v)))
-                {
-                    self.ext.insert(k, f.await?);
-                }
-                self.dae = Some(dae);
-                Ok(Response::Connected)
-            }
-            Request::Search { prompt, input } => {
-                log::debug(format!("search {} with {:#?}", prompt, input).as_str());
-                match self.ext.get_mut(&prompt) {
-                    Some(e) => e,
-                    None => {
-                        self.ext.insert(
-                            prompt.clone(),
-                            ext::ExtService::with_port(
-                                MAX_TRY_CONNECT as u32,
-                                self.dae.as_mut().unwrap().get_ext_port(&prompt).await?,
-                            )
-                            .await?,
-                        );
-                        self.ext.get_mut(&prompt).unwrap()
-                    }
-                }
-                .search(input)
-                .await
-                .map(|displays| Response::Search(displays))
-            }
-            Request::Submit { prompt, hint } => self
-                .ext
-                .get_mut(&prompt)
-                .unwrap()
-                .submit(hint)
-                .await
-                .map(|_| Response::Submit),
-            // Request::Fill { prompt, obj_id } => self
-            //     .ext
-            //     .get_mut(&prompt)
-            //     .unwrap()
-            //     .fill(obj_id)
-            //     .await
-            //     .map(|content| Response::FillResult(content)),
-        }
+    pub async fn get_ext(&mut self, prompt: &String) -> Result<&mut ExtService, error::Error> {
+        let ext = self
+            .exts
+            .entry(prompt.clone())
+            .or_insert(Service::with_addr(
+                self.dae
+                    .as_mut()
+                    .unwrap()
+                    .request(daemon::Prompt {
+                        content: prompt.clone(),
+                    })
+                    .await
+                    .map_err(|e| error::Error::new(format!("get ext port failed: {}", e)))?,
+            )?);
+        ext.check_connected().await?;
+        Ok(ext)
+    }
+    pub async fn connet(&mut self, ep: tonic::transport::Endpoint) -> Result<(), error::Error> {
+        log::debug(format!("connect to {:#?}", ep.uri()).as_str());
+        let mut dae = DaemonService::new(ep.clone());
+        dae.check_connected()
+            .await
+            .map_err(|e| error::Error::new(format!("connect to daemon failed: {}", e)))?;
+        let c = dae
+            .request(crate::rpc::defs::Empty {})
+            .await
+            .map_err(|e| error::Error::new(format!("get ext port failed: {}", e)))?
+            .into_iter()
+            .flat_map(|(k, v)| ExtService::with_addr(v).map_or(None, |e| Some((k, e))));
+        self.exts.extend(c);
+        self.dae = Some(dae);
+        Ok(())
     }
 }

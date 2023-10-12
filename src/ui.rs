@@ -1,6 +1,7 @@
 mod flags;
 pub use flags::Flags;
 
+mod modal;
 mod select;
 pub use select::Item;
 
@@ -12,7 +13,7 @@ mod error;
 pub use error::Error;
 
 use iced::{
-    widget::{self, column, text_input},
+    widget::{self, text_input},
     window, Command, Size, Subscription,
 };
 
@@ -38,6 +39,7 @@ pub enum FromUi {
     InputChanged(String),
     Select(select::Message),
     Submit,
+    HideSetting,
 }
 #[derive(Debug, Clone)]
 pub enum FromServer {
@@ -93,6 +95,7 @@ pub struct App {
     input: String,
     prompt: String,
     runstate: Runstate,
+    is_setting: bool,
 }
 
 impl App {
@@ -148,6 +151,7 @@ impl iced::Application for App {
                 runstate: Runstate::Select,
                 prompt: String::new(),
                 flags,
+                is_setting: false,
             },
             Command::batch([window::resize(WIN_INIT_SIZE), cmd.map(convert_select_msg)]),
         )
@@ -256,33 +260,65 @@ impl iced::Application for App {
                     }
                     Command::none()
                 }
-            },
-            Self::Message::UserEvent(e) => match e {
-                iced::Event::Window(iced::window::Event::Resized { width, height }) => {
-                    self.win_size = Size { width, height };
-                    self.select.update(select::Message::Height(
-                        (height as u16)
-                            .checked_sub((TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING)
-                            .unwrap_or(0),
-                    ))
+                FromUi::HideSetting => {
+                    self.is_setting = false;
+                    Command::none()
                 }
-                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key_code, .. }) => {
-                    match key_code {
-                        iced::keyboard::KeyCode::Up => {
-                            self.try_reload();
-                            self.select.update(select::Message::Up)
+            },
+            Self::Message::UserEvent(e) => {
+                if matches!(e, iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key_code: iced::keyboard::KeyCode::Tab,
+                    modifiers,
+                }) if modifiers.control())
+                {
+                    log::info("ctrl-tab pressed");
+                    self.is_setting = true;
+                    return Command::none();
+                } else {
+                    match e {
+                        iced::Event::Window(iced::window::Event::Resized { width, height }) => {
+                            self.win_size = Size { width, height };
+                            self.select.update(select::Message::Height(
+                                (height as u16)
+                                    .checked_sub(
+                                        (TEXT_WIDTH + SPACING * 2) + (PADDING * 2) + SPACING,
+                                    )
+                                    .unwrap_or(0),
+                            ))
                         }
-                        iced::keyboard::KeyCode::Down => {
-                            self.try_reload();
-                            self.select.update(select::Message::Down)
-                        }
+                        // iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        //     key_code,
+                        //     modifiers,
+                        // }) => match key_code {
+                        //     iced::keyboard::KeyCode::Up => {
+                        //         self.try_reload();
+                        //         self.select.update(select::Message::Up)
+                        //     }
+                        //     iced::keyboard::KeyCode::Down => {
+                        //         self.try_reload();
+                        //         self.select.update(select::Message::Down)
+                        //     }
+                        //     _ => Command::none(),
+                        // },
+                        iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                            key_code,
+                            modifiers,
+                        }) if modifiers.is_empty() => match key_code {
+                            iced::keyboard::KeyCode::Up => {
+                                self.try_reload();
+                                self.select.update(select::Message::Up)
+                            }
+                            iced::keyboard::KeyCode::Down | iced::keyboard::KeyCode::Tab => {
+                                self.try_reload();
+                                self.select.update(select::Message::Down)
+                            }
+                            _ => Command::none(),
+                        },
                         _ => Command::none(),
                     }
+                    .map(convert_select_msg)
                 }
-
-                _ => Command::none(),
             }
-            .map(convert_select_msg),
         }
     }
     fn subscription(&self) -> Subscription<Self::Message> {
@@ -303,9 +339,17 @@ impl iced::Application for App {
             .width(iced::Length::Fill)
             .on_submit(Self::Message::FromUi(FromUi::Submit))
             .id(text_input::Id::new("i0"));
-        column!(input, self.select.view().map(convert_select_msg))
+        let base = widget::Column::new()
+            .push(input)
+            .push(self.select.view().map(convert_select_msg))
             .spacing(SPACING)
-            .padding(PADDING)
-            .into()
+            .padding(PADDING);
+        if self.is_setting {
+            modal::Modal::new(base, widget::text("this is a test"))
+                .on_blur(Self::Message::FromUi(FromUi::HideSetting))
+                .into()
+        } else {
+            base.into()
+        }
     }
 }

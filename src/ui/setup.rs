@@ -12,6 +12,8 @@ impl iced::Sandbox for SetUp {
     }
     fn update(&mut self, message: Message) {}
     fn view(&self) -> iced::Element<'_, Self::Message> {
-        iced::widget::text("Setup").into()
+        use iced::advanced::widget::*;
+        let ele: iced::Element<'_, Message> = iced::widget::text("Setup").into();
+        ele
     }
 }
