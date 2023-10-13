@@ -1,21 +1,8 @@
-pub mod defs;
-
-pub mod daemon;
 pub mod error;
-pub mod extension;
-mod response;
-pub use response::Response;
 mod service;
-mod utils;
-use daemon::Service as DaemonService;
-pub use extension::DisplayList;
-pub use extension::Input;
-use extension::Service as ExtService;
-pub use extension::SubmitHint;
-use service::Service;
+use service::{DaemonService, Empty, ExtService, Prompt};
+pub use service::{Input, Service, SubmitHint};
 use xlog_rs::log;
-
-pub const MAX_TRY_CONNECT: usize = 3;
 
 pub struct Server {
     dae: Option<DaemonService>,
@@ -36,7 +23,7 @@ impl Server {
                 self.dae
                     .as_mut()
                     .unwrap()
-                    .request(daemon::Prompt {
+                    .request(Prompt {
                         content: prompt.clone(),
                     })
                     .await
@@ -52,7 +39,7 @@ impl Server {
             .await
             .map_err(|e| error::Error::new(format!("connect to daemon failed: {}", e)))?;
         let c = dae
-            .request(crate::rpc::defs::Empty {})
+            .request(Empty {})
             .await
             .map_err(|e| error::Error::new(format!("get ext port failed: {}", e)))?
             .into_iter()

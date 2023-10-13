@@ -1,4 +1,8 @@
+use std::pin::Pin;
 use xlog_rs::log;
+pub type BoxFuture<'a, T> = Pin<
+    Box<dyn std::future::Future<Output = Result<tonic::Response<T>, tonic::Status>> + Send + 'a>,
+>;
 pub async fn try_connect(
     max_try: usize,
     endpoint: tonic::transport::Endpoint,
