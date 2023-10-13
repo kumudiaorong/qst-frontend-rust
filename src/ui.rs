@@ -5,7 +5,7 @@ mod modal;
 mod select;
 pub use select::Item;
 
-mod setup;
+mod setting;
 
 mod utils;
 
@@ -138,14 +138,16 @@ impl iced::Application for App {
     type Flags = flags::Flags;
 
     fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let (select, cmd) = select::Select::new(
-            WIN_INIT_SIZE.height as u16 - (TEXT_WIDTH + SPACING * 2) - (PADDING * 2) - SPACING,
-        );
         (
             Self {
                 tx: None,
                 input: String::new(),
-                select,
+                select: select::Select::new(
+                    WIN_INIT_SIZE.height as u16
+                        - (TEXT_WIDTH + SPACING * 2)
+                        - (PADDING * 2)
+                        - SPACING,
+                ),
                 win_size: WIN_INIT_SIZE,
                 placeholder: "[prompt]content".to_string(),
                 runstate: Runstate::Select,
@@ -153,7 +155,7 @@ impl iced::Application for App {
                 flags,
                 is_setting: false,
             },
-            Command::batch([window::resize(WIN_INIT_SIZE), cmd.map(convert_select_msg)]),
+            window::resize(WIN_INIT_SIZE),
         )
     }
 
@@ -203,25 +205,30 @@ impl iced::Application for App {
             },
             Self::Message::FromUi(umsg) => match umsg {
                 FromUi::InputChanged(input) => {
-                    if input.is_empty() {
-                        self.input.clear();
-                        Command::perform(async {}, move |_| {
-                            Self::Message::FromServer(Ok(FromServer::Search(vec![])))
-                        })
-                    } else {
-                        self.input = input;
-                        match utils::extract_prompt(self.input.as_str()) {
-                            Some((prompt, content))
-                                if self.runstate == Runstate::Select || prompt != self.prompt =>
-                            {
-                                self.prompt = prompt.clone();
-                                if let Err(e) = self.try_send(ToServer::Search { prompt, content })
+                    self.input = input.clone();
+                    if let Runstate::Select = self.runstate {
+                        if input.is_empty() {
+                            Command::perform(async {}, move |_| {
+                                Self::Message::FromServer(Ok(FromServer::Search(vec![])))
+                            })
+                        } else {
+                            match utils::extract_prompt(self.input.as_str()) {
+                                Some((prompt, content))
+                                    if self.runstate == Runstate::Select
+                                        || prompt != self.prompt =>
                                 {
-                                    log::warn(format!("search send failed: {:?}", e).as_str());
+                                    self.prompt = prompt.clone();
+                                    if let Err(e) =
+                                        self.try_send(ToServer::Search { prompt, content })
+                                    {
+                                        log::warn(format!("search send failed: {:?}", e).as_str());
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
+                            Command::none()
                         }
+                    } else {
                         Command::none()
                     }
                 }
@@ -286,20 +293,6 @@ impl iced::Application for App {
                                     .unwrap_or(0),
                             ))
                         }
-                        // iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                        //     key_code,
-                        //     modifiers,
-                        // }) => match key_code {
-                        //     iced::keyboard::KeyCode::Up => {
-                        //         self.try_reload();
-                        //         self.select.update(select::Message::Up)
-                        //     }
-                        //     iced::keyboard::KeyCode::Down => {
-                        //         self.try_reload();
-                        //         self.select.update(select::Message::Down)
-                        //     }
-                        //     _ => Command::none(),
-                        // },
                         iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
                             key_code,
                             modifiers,
@@ -342,8 +335,14 @@ impl iced::Application for App {
         let base = widget::Column::new()
             .push(input)
             .push(self.select.view().map(convert_select_msg))
+            .push(widget::space::Space::new(
+                iced::Length::Fill,
+                iced::Length::Fill,
+            ))
             .spacing(SPACING)
-            .padding(PADDING);
+            .padding(PADDING)
+            .height(iced::Length::Fill)
+            .width(iced::Length::Fill);
         if self.is_setting {
             modal::Modal::new(base, widget::text("this is a test"))
                 .on_blur(Self::Message::FromUi(FromUi::HideSetting))
