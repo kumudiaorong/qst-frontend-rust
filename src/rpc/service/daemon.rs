@@ -1,7 +1,6 @@
 tonic::include_proto!("daemon");
 use super::{
-    defs::Status, utils::BoxFuture, Client as AClient, Empty, Error, IntoResult, Request,
-    Service as TService,
+    utils::BoxFuture, Client as AClient, Empty, Error, IntoResult, Request, Service as TService,
 };
 type Client = main_interact_client::MainInteractClient<tonic::transport::Channel>;
 pub type Service = TService<Client>;
@@ -28,17 +27,19 @@ impl Request<Client, ExtAddrResult> for Prompt {
 }
 impl IntoResult<std::collections::HashMap<String, String>> for SetUpResult {
     fn into_result(self) -> Result<std::collections::HashMap<String, String>, Error> {
-        match Status::from_i32(self.status).unwrap() {
-            Status::Ok => Ok(self.running),
-            Status::Error => return Err("search executed but failed".into()),
+        use set_up_result::{MOk, Mresult};
+        match self.mresult.unwrap() {
+            Mresult::Ok(MOk { running }) => Ok(running),
+            Mresult::Status(status) => return Err("search executed but failed".into()),
         }
     }
 }
 impl IntoResult<String> for ExtAddrResult {
     fn into_result(self) -> Result<String, Error> {
-        match Status::from_i32(self.status).unwrap() {
-            Status::Ok => Ok(self.addr),
-            Status::Error => return Err("submit executed but failed".into()),
+        use ext_addr_result::{MOk, Mresult};
+        match self.mresult.unwrap() {
+            Mresult::Ok(MOk { addr }) => Ok(addr),
+            Mresult::Status(status) => return Err("submit executed but failed".into()),
         }
     }
 }

@@ -1,7 +1,8 @@
 tonic::include_proto!("ext");
 use super::{
-    defs::Status, utils::BoxFuture, Client as AClient, Error, IntoResult, Request,
-    Service as TService,
+    defs::{status, MResult},
+    utils::BoxFuture,
+    Client as AClient, Error, IntoResult, Request, Service as TService,
 };
 
 type Client = ext_interact_client::ExtInteractClient<tonic::transport::Channel>;
@@ -21,28 +22,21 @@ impl Request<Client, SearchResult> for Input {
         Box::pin(cli.search(self))
     }
 }
-impl Request<Client, SubmitResult> for SubmitHint {
+impl Request<Client, MResult> for SubmitHint {
     fn action(&self) -> &'static str {
         "Submit"
     }
-    fn request(self, cli: &mut Client) -> BoxFuture<'_, SubmitResult> {
+    fn request(self, cli: &mut Client) -> BoxFuture<'_, MResult> {
         Box::pin(cli.submit(self))
     }
 }
 
 impl IntoResult<Vec<Display>> for SearchResult {
     fn into_result(self) -> Result<Vec<Display>, Error> {
-        match Status::from_i32(self.status).unwrap() {
-            Status::Ok => Ok(self.display_list.unwrap().list),
-            Status::Error => return Err("search executed but failed".into()),
-        }
-    }
-}
-impl IntoResult<()> for SubmitResult {
-    fn into_result(self) -> Result<(), Error> {
-        match Status::from_i32(self.status).unwrap() {
-            Status::Ok => Ok(()),
-            Status::Error => return Err("submit executed but failed".into()),
+        use search_result::{MOk, Mresult};
+        match self.mresult.unwrap() {
+            Mresult::Ok(MOk { display_list }) => Ok(display_list.unwrap().list),
+            Mresult::Status(status) => return Err("search executed but failed".into()),
         }
     }
 }
