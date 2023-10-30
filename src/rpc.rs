@@ -1,3 +1,4 @@
+mod def;
 pub mod error;
 mod service;
 use service::{DaemonService, Empty, ExtService, Prompt};
@@ -31,6 +32,16 @@ impl Server {
             )?);
         ext.check_connected().await?;
         Ok(ext)
+    }
+    async fn set_up(&mut self) -> Result<(), error::Error> {
+        self.dae
+        self.dae
+            .as_mut()
+            .unwrap()
+            .request(Empty {})
+            .await
+            .map_err(|e| error::Error::new(format!("get ext port failed: {}", e)))?;
+        Ok(())
     }
     pub async fn connet(&mut self, ep: tonic::transport::Endpoint) -> Result<(), error::Error> {
         log::debug(format!("connect to {:#?}", ep.uri()).as_str());

@@ -1,5 +1,4 @@
 mod daemon;
-mod defs;
 mod error;
 mod extension;
 mod request;
@@ -40,6 +39,9 @@ impl<C: Client> Service<C> {
             })?,
         ))
     }
+    pub fn with_ep(ep: Endpoint) -> Self {
+        Self::new(ep)
+    }
     pub async fn check_connected(&mut self) -> Result<(), Error> {
         if let Inner::Ready(ep) = &mut self.inner {
             self.inner = Inner::Connected(C::new(
@@ -54,10 +56,11 @@ impl<C: Client> Service<C> {
     where
         T: response::IntoResult<U>,
     {
-        if let Inner::Connected(cli) = &mut self.inner {
-            response::convert(req.request(cli).await)
-        } else {
-            unreachable!("check_connected should have connected and return Ok")
-        }
+        self.check_connected().await?;
+        let cli = match &mut self.inner {
+            Inner::Connected(cli) => cli,
+            _ => unreachable!("check_connected should have connected and return Ok"),
+        };
+        response::convert(req.request(cli).await)
     }
 }

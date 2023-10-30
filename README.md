@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This is the frontend of [qst](https://github.com/kumudiaorong/qst) written in rust.
+This is the frontend of [qst](https://github.com/kumudiaorong/qst-grpc) written in rust.
 ## Getting Started
 
 ### Get Release
