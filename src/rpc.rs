@@ -1,10 +1,13 @@
 mod def;
 pub mod error;
 mod service;
-use service::{DaemonService, Empty, ExtService, Prompt};
-pub use service::{Input, Service, SubmitHint};
+use service::{DaemonService, ExtService,RequestExtAddr};
+pub use service::{Service};
 use xlog_rs::log;
-
+struct Ext {
+    addr: String,
+    service: ExtService,
+}
 pub struct Server {
     dae: Option<DaemonService>,
     exts: std::collections::HashMap<String, ExtService>,

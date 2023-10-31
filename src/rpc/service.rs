@@ -6,13 +6,15 @@ mod response;
 mod utils;
 const MAX_TRY_CONNECT: usize = 3;
 
-pub use daemon::{Prompt, Service as DaemonService};
-pub use defs::Empty;
+pub use daemon::Service as DaemonService;
+pub use daemon::{RequestExtAddr, RequestSetup};
 pub use error::Error;
-pub use extension::{Input, Service as ExtService, SubmitHint};
+pub use extension::Service as ExtService;
+pub use extension::{RequestSearch, RequestSubmit};
 use request::Request;
 use response::IntoResult;
 use tonic::transport::Endpoint;
+
 enum Inner<C> {
     Ready(Endpoint),
     Connected(C),

@@ -11,9 +11,9 @@ impl AClient for Client {
     }
 }
 
-type SetupRequest = Empty;
+pub type RequestSetup = Empty;
 
-impl Request<Client, Prompt2Addr> for SetupRequest {
+impl Request<Client, Prompt2Addr> for RequestSetup {
     fn action(&self) -> &'static str {
         "Search"
     }
@@ -21,7 +21,8 @@ impl Request<Client, Prompt2Addr> for SetupRequest {
         Box::pin(cli.set_up(self))
     }
 }
-impl Request<Client, ExtAddr> for ExtId {
+pub type RequestExtAddr = ExtId;
+impl Request<Client, ExtAddr> for RequestExtAddr {
     fn action(&self) -> &'static str {
         "Submit"
     }
