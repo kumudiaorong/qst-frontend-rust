@@ -7,8 +7,3 @@ pub mod common {
 pub mod extension {
     tonic::include_proto!("extension");
 }
-pub enum Request {
-    SetUp,
-    Search,
-    Submit,
-}

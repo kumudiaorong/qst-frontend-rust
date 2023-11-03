@@ -6,14 +6,16 @@ mod response;
 mod utils;
 const MAX_TRY_CONNECT: usize = 3;
 
+pub use daemon::FastConfig;
 pub use daemon::Service as DaemonService;
 pub use daemon::{RequestExtAddr, RequestSetup};
 pub use error::Error;
 pub use extension::Service as ExtService;
 pub use extension::{RequestSearch, RequestSubmit};
 use request::Request;
-use response::IntoResult;
 use tonic::transport::Endpoint;
+use tonic::Code;
+use xlog_rs::log;
 
 enum Inner<C> {
     Ready(Endpoint),
@@ -46,23 +48,34 @@ impl<C: Client> Service<C> {
     }
     pub async fn check_connected(&mut self) -> Result<(), Error> {
         if let Inner::Ready(ep) = &mut self.inner {
-            self.inner = Inner::Connected(C::new(
-                utils::try_connect(MAX_TRY_CONNECT, ep.clone())
-                    .await
-                    .map_err(|e| Error::new(format!("can't create endpoint {:#?}", e)))?,
-            ));
+            let channel = utils::try_connect(MAX_TRY_CONNECT, ep.clone())
+                .await
+                .map_err(|e| Error::new(format!("can't create endpoint {:#?}", e)))?;
+            log::info(format!("connected to {:#?}", ep.uri()).as_str());
+            self.inner = Inner::Connected(C::new(channel));
         }
         Ok(())
     }
-    pub async fn request<T, U>(&mut self, req: impl Request<C, T>) -> Result<U, Error>
-    where
-        T: response::IntoResult<U>,
-    {
+    pub async fn request<T>(&mut self, req: impl Request<C, T> + Clone) -> Result<T, Error> {
         self.check_connected().await?;
         let cli = match &mut self.inner {
             Inner::Connected(cli) => cli,
             _ => unreachable!("check_connected should have connected and return Ok"),
         };
-        response::convert(req.request(cli).await)
+        loop {
+            let ret = req.clone().request(cli).await.map(|v| v.into_inner());
+            match ret {
+                Ok(v) => break Ok(v),
+                Err(status) => {
+                    if status.code() != Code::Unavailable {
+                        break Err(Error::new(format!("request failed: {}", status)));
+                    }
+                }
+            }
+        }
+        // req.request(cli).await.map(|v| v.into_inner()).map_err(|e| {
+        //     xlog_rs::log::warn(format!("request failed: {}", e).as_str());
+        //     Error::new(format!("request failed: {}", e))
+        // })
     }
 }

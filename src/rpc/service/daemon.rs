@@ -1,8 +1,9 @@
 use super::super::def;
-use super::{utils::BoxFuture, Client as AClient, Error, IntoResult, Request, Service as TService};
+use super::{utils::BoxFuture, Client as AClient, Request, Service as TService};
 use def::common::Empty;
 use def::daemon::main_client;
-use def::daemon::{ExtAddr, ExtId, Prompt, Prompt2Addr};
+pub use def::daemon::FastConfig;
+use def::daemon::{ExtAddr, ExtId};
 type Client = main_client::MainClient<tonic::transport::Channel>;
 pub type Service = TService<Client>;
 impl AClient for Client {
@@ -13,11 +14,11 @@ impl AClient for Client {
 
 pub type RequestSetup = Empty;
 
-impl Request<Client, Prompt2Addr> for RequestSetup {
+impl Request<Client, FastConfig> for RequestSetup {
     fn action(&self) -> &'static str {
         "Search"
     }
-    fn request(self, cli: &mut Client) -> BoxFuture<'_, Prompt2Addr> {
+    fn request(self, cli: &mut Client) -> BoxFuture<'_, FastConfig> {
         Box::pin(cli.set_up(self))
     }
 }

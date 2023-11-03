@@ -10,7 +10,7 @@
     },
     "doxdocgen.generic.authorName": "kumudiaorong",
     "doxdocgen.generic.authorEmail": "kmdr.error@gmail.com",
-    "window.zoomLevel": 2,
+    "window.zoomLevel": 1,
     "protoc": {
         "path": "protoc",
         "compile_on_save": false,

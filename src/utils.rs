@@ -1,8 +1,9 @@
 use crate::rpc;
 use crate::ui;
-use rpc::{Input, Server, SubmitHint};
+use rpc::{RequestSearch, RequestSubmit, Server};
 use ui::FromServer;
 use ui::ToServer;
+use xlog_rs::log;
 pub trait Convert {
     fn convert(self) -> Self;
 }
@@ -11,18 +12,20 @@ pub async fn convert(ui: ToServer, ser: &mut Server) -> Result<FromServer, ui::E
     match ui {
         ToServer::Connect(endpoint) => match ser.connet(endpoint).await {
             Ok(_) => Ok(FromServer::Connected),
-            Err(e) => Err(ui::Error::from(e)),
+            Err(e) => {
+                log::error(format!("connect server failed: {}", e).as_str());
+                Err(ui::Error::from(e))
+            }
         },
-        ToServer::Search { prompt, content } => ser
-            .get_ext(&prompt)
-            .await
-            .map_err(|e| ui::Error::from(e))?
-            .request(Input { content })
-            .await
-            .map_err(|e| ui::Error::from(e))
-            .map(|mut r| {
-                FromServer::Search(
-                    r.drain(..)
+        ToServer::Search { prompt, content } => {
+            if let Some(ext) = ser.get_ext(&prompt).await {
+                let mut r = ext
+                    .request(RequestSearch { content })
+                    .await
+                    .map_err(|e| ui::Error::from(e))?;
+                Ok(FromServer::Search(
+                    r.list
+                        .drain(..)
                         .map(|d| ui::Item {
                             obj_id: d.obj_id,
                             name: d.name,
@@ -30,19 +33,24 @@ pub async fn convert(ui: ToServer, ser: &mut Server) -> Result<FromServer, ui::E
                             icon: None,
                         })
                         .collect(),
-                )
-            }),
+                ))
+            } else {
+                Err(ui::Error::from("no such prompt"))
+            }
+        }
         ToServer::Submit {
             prompt,
             obj_id,
             hint,
-        } => ser
-            .get_ext(&prompt)
-            .await
-            .map_err(|e| ui::Error::from(e))?
-            .request(SubmitHint { obj_id, hint })
-            .await
-            .map_err(|e| ui::Error::from(e))
-            .map(|_| FromServer::Submit),
+        } => {
+            if let Some(ext) = ser.get_ext(&prompt).await {
+                ext.request(RequestSubmit { obj_id, hint })
+                    .await
+                    .map_err(|e| ui::Error::from(e))?;
+                Ok(FromServer::Submit)
+            } else {
+                Err(ui::Error::from("no such prompt"))
+            }
+        }
     }
 }

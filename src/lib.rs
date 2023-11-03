@@ -1,3 +1,4 @@
+mod flag;
 mod rpc;
 mod ui;
 mod utils;

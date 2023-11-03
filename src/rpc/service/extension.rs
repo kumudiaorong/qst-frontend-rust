@@ -1,8 +1,7 @@
 use super::super::def;
-use super::{utils::BoxFuture, Client as AClient, Error, IntoResult, Request, Service as TService};
+use super::{utils::BoxFuture, Client as AClient, Request, Service as TService};
 use def::common::Empty;
 use def::extension::main_client;
-use def::extension::DisplayItem;
 use def::extension::DisplayList;
 use def::extension::Input;
 use def::extension::SubmitHint;

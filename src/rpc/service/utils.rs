@@ -7,7 +7,6 @@ pub async fn try_connect(
     max_try: usize,
     endpoint: tonic::transport::Endpoint,
 ) -> Result<tonic::transport::Channel, tonic::transport::Error> {
-    log::info(format!("try connect server: {:#?}", endpoint.uri()).as_str());
     let mut cnt = 0;
     while cnt < max_try - 1 {
         match endpoint.connect().await {
