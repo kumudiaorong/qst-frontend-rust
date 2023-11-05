@@ -44,7 +44,6 @@ pub enum FromUi {
 #[derive(Debug, Clone)]
 pub enum FromServer {
     Setup(iced_mpsc::Sender<ToServer>),
-    Connected,
     Search(Vec<select::Item>),
     Submit,
     // FillResult(String),
@@ -69,7 +68,6 @@ pub enum ToServer {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    Start(iced_mpsc::Sender<ToServer>),
     FromServer(Result<FromServer, Error>),
     ToServer(ToServer),
     FromUi(FromUi),
@@ -165,10 +163,6 @@ impl iced::Application for App {
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
-            Self::Message::Start(tx) => {
-                self.tx = Some(tx);
-                Command::none()
-            }
             Self::Message::ToServer(req) => match self.try_send(req.clone()) {
                 Err(e) => {
                     log::warn(format!("input failed: {:?}", e).as_str());
@@ -187,9 +181,8 @@ impl iced::Application for App {
                 Ok(msg) => match msg {
                     FromServer::Setup(tx) => {
                         self.tx = Some(tx);
-                        Command::none()
+                        text_input::focus(text_input::Id::new("i0"))
                     }
-                    FromServer::Connected => text_input::focus(text_input::Id::new("i0")),
                     FromServer::Search(list) => self
                         .select
                         .update(select::Message::Refresh(list))
