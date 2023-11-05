@@ -43,6 +43,7 @@ pub enum FromUi {
 }
 #[derive(Debug, Clone)]
 pub enum FromServer {
+    Setup(iced_mpsc::Sender<ToServer>),
     Connected,
     Search(Vec<select::Item>),
     Submit,
@@ -51,7 +52,6 @@ pub enum FromServer {
 
 #[derive(Debug, Clone)]
 pub enum ToServer {
-    Connect(tonic::transport::Endpoint),
     Search {
         prompt: String,
         content: String,
@@ -167,10 +167,7 @@ impl iced::Application for App {
         match message {
             Self::Message::Start(tx) => {
                 self.tx = Some(tx);
-                let ed = self.flags.endpoint.clone();
-                Command::perform(async {}, move |_| {
-                    Self::Message::ToServer(ToServer::Connect(ed))
-                })
+                Command::none()
             }
             Self::Message::ToServer(req) => match self.try_send(req.clone()) {
                 Err(e) => {
@@ -188,6 +185,10 @@ impl iced::Application for App {
             },
             Self::Message::FromServer(result) => match result {
                 Ok(msg) => match msg {
+                    FromServer::Setup(tx) => {
+                        self.tx = Some(tx);
+                        Command::none()
+                    }
                     FromServer::Connected => text_input::focus(text_input::Id::new("i0")),
                     FromServer::Search(list) => self
                         .select

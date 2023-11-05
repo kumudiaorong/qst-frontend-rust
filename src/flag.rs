@@ -1,3 +1,12 @@
+use clap::Parser;
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    #[arg(short, long)]
+    pub uri: String,
+}
 // use xlog_rs::log;
 // pub struct Flags {
 //     pub endpoint: transport::Endpoint,

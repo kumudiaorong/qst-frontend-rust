@@ -3,16 +3,35 @@ mod rpc;
 mod ui;
 mod utils;
 
+use std::cell::Cell;
+
 use iced::Application;
 
+use iced_futures::{futures::channel::mpsc as iced_mpsc, subscription::Recipe};
+use tonic::transport::Endpoint;
 use xlog_rs::log;
 
 const MAX_TRY_SEND: usize = 3;
 
-fn connect() -> iced_futures::Subscription<ui::Message> {
+struct Converter {
+    rx: iced_mpsc::Receiver<ui::ToServer>,
+    server: rpc::Server,
+}
+impl Converter {
+    pub async fn new(
+        rx: iced_mpsc::Receiver<ui::ToServer>,
+        ep: Endpoint,
+    ) -> Result<Self, rpc::Error> {
+        Ok(Self {
+            rx,
+            server: rpc::Server::connet(ep).await?,
+        })
+    }
+}
+
+fn connect(ep: Endpoint) -> iced_futures::Subscription<ui::Message> {
     struct SomeSub;
     enum State {
-        Starting,
         TryRecv,
         TrySend {
             msg: ui::Message,
@@ -20,36 +39,29 @@ fn connect() -> iced_futures::Subscription<ui::Message> {
             cnt: usize,
         },
     }
-    use iced_futures::futures::channel::mpsc as async_mpsc;
     iced_futures::subscription::channel(
         std::any::TypeId::of::<SomeSub>(),
         1000,
-        |mut toui: async_mpsc::Sender<ui::Message>| async move {
-            let mut msgqueue = std::collections::VecDeque::from(vec![State::Starting]);
-            let mut server = rpc::Server::new();
-            let mut rx: Option<async_mpsc::Receiver<ui::ToServer>> = None;
+        |mut toui: iced_mpsc::Sender<ui::Message>| async move {
+            let (tx, mut rx) = iced_mpsc::channel(1000);
+
+            let mut msgqueue = std::collections::VecDeque::from(vec![State::TrySend {
+                msg: ui::Message::FromServer(Ok(ui::FromServer::Setup(tx))),
+                action: || State::TryRecv,
+                cnt: 0,
+            }]);
+            let mut server = rpc::Server::connet(ep.clone())
+                .await
+                .expect("connect to server failed");
             while let Some(state) = msgqueue.pop_front() {
                 use iced_futures::futures::sink::SinkExt;
                 let mut states = vec![];
                 match state {
-                    State::Starting => {
-                        let (sender, receiver) = async_mpsc::channel(1000);
-                        rx = Some(receiver);
-                        states.push(State::TrySend {
-                            msg: ui::Message::Start(sender),
-                            action: || State::TryRecv,
-                            cnt: 0,
-                        });
-                    }
                     State::TryRecv => {
                         use iced_futures::futures::StreamExt;
                         states.push(State::TrySend {
                             msg: ui::Message::FromServer(
-                                utils::convert(
-                                    rx.as_mut().unwrap().select_next_some().await,
-                                    &mut server,
-                                )
-                                .await,
+                                utils::convert(rx.select_next_some().await, &mut server).await,
                             ),
                             action: || State::TryRecv,
                             cnt: 0,
@@ -80,7 +92,13 @@ fn connect() -> iced_futures::Subscription<ui::Message> {
         },
     )
 }
-pub fn run() -> iced::Result {
-    let settings = iced::Settings::with_flags(ui::Flags::new(std::env::args().collect(), connect));
-    ui::App::run(settings)
+pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    use clap::Parser;
+    let args = flag::Args::parse();
+    args.uri.parse::<Endpoint>().unwrap();
+    // let c = Cell::new(receiver);
+    let settings = iced::Settings::with_flags(ui::Flags::new(Box::new(move || {
+        connect(args.uri.parse::<Endpoint>().unwrap())
+    })));
+    ui::App::run(settings).map_err(|e| e.into())
 }

@@ -10,13 +10,6 @@ pub trait Convert {
 
 pub async fn convert(ui: ToServer, ser: &mut Server) -> Result<FromServer, ui::Error> {
     match ui {
-        ToServer::Connect(endpoint) => match ser.connet(endpoint).await {
-            Ok(_) => Ok(FromServer::Connected),
-            Err(e) => {
-                log::error(format!("connect server failed: {}", e).as_str());
-                Err(ui::Error::from(e))
-            }
-        },
         ToServer::Search { prompt, content } => {
             if let Some(ext) = ser.get_ext(&prompt).await {
                 let mut r = ext
