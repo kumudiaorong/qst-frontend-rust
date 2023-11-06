@@ -2,7 +2,6 @@ mod connect;
 mod flag;
 mod rpc;
 mod ui;
-mod utils;
 
 use iced::Application;
 

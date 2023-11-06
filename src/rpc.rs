@@ -1,4 +1,3 @@
-mod def;
 pub mod error;
 pub use error::Error;
 mod service;
@@ -44,9 +43,6 @@ impl Server {
     pub async fn connet(ep: tonic::transport::Endpoint) -> Result<Self, error::Error> {
         log::debug(format!("connect to {:#?}", ep.uri()).as_str());
         let mut dae = DaemonService::new(ep.clone());
-        dae.check_connected()
-            .await
-            .map_err(|e| error::Error::new(format!("connect to daemon failed: {}", e)))?;
         let fcfg = dae
             .request(RequestSetup {})
             .await

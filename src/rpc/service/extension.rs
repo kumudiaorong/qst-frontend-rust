@@ -1,12 +1,12 @@
-use super::super::def;
+use super::def;
 use super::{utils::BoxFuture, Client as AClient, Request, Service as TService};
-use def::common::Empty;
-use def::extension::main_client;
-use def::extension::DisplayList;
-use def::extension::Input;
-use def::extension::SubmitHint;
+use def::{
+    common::Empty,
+    extension::{main_client, DisplayList, Input, SubmitHint},
+};
 
 type Client = main_client::MainClient<tonic::transport::Channel>;
+
 pub type Service = TService<Client>;
 
 impl AClient for Client {
@@ -14,7 +14,9 @@ impl AClient for Client {
         Self::new(cli)
     }
 }
+
 pub type RequestSearch = Input;
+
 impl Request<Client, DisplayList> for RequestSearch {
     fn action(&self) -> &'static str {
         "Search"
@@ -23,7 +25,9 @@ impl Request<Client, DisplayList> for RequestSearch {
         Box::pin(cli.search(self))
     }
 }
+
 pub type RequestSubmit = SubmitHint;
+
 impl Request<Client, Empty> for RequestSubmit {
     fn action(&self) -> &'static str {
         "Submit"
@@ -32,13 +36,3 @@ impl Request<Client, Empty> for RequestSubmit {
         Box::pin(cli.submit(self))
     }
 }
-
-// impl IntoResult<Vec<DisplayItem>> for SearchResult {
-//     fn into_result(self) -> Result<Vec<DisplayItem>, Error> {
-//         use search_result::{MOk, Mresult};
-//         match self.mresult.unwrap() {
-//             Mresult::Ok(MOk { display_list }) => Ok(display_list.unwrap().list),
-//             Mresult::Status(status) => return Err("search executed but failed".into()),
-//         }
-//     }
-// }

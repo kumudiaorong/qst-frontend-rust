@@ -1,9 +1,9 @@
-pub mod daemon {
+pub(super) mod daemon {
     tonic::include_proto!("daemon");
 }
-pub mod common {
+pub(super) mod common {
     tonic::include_proto!("common");
 }
-pub mod extension {
+pub(super) mod extension {
     tonic::include_proto!("extension");
 }

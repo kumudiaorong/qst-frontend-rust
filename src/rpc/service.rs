@@ -1,20 +1,16 @@
 mod daemon;
+mod def;
 mod error;
 mod extension;
 mod request;
-mod response;
 mod utils;
 const MAX_TRY_CONNECT: usize = 3;
 
-pub use daemon::FastConfig;
-pub use daemon::Service as DaemonService;
-pub use daemon::{RequestExtAddr, RequestSetup};
+pub use daemon::{FastConfig, RequestExtAddr, RequestSetup, Service as DaemonService};
 pub use error::Error;
-pub use extension::Service as ExtService;
-pub use extension::{RequestSearch, RequestSubmit};
+pub use extension::{RequestSearch, RequestSubmit, Service as ExtService};
 use request::Request;
-use tonic::transport::Endpoint;
-use tonic::Code;
+use tonic::{transport::Endpoint, Code};
 use xlog_rs::log;
 
 enum Inner<C> {
@@ -46,7 +42,7 @@ impl<C: Client> Service<C> {
     pub fn with_ep(ep: Endpoint) -> Self {
         Self::new(ep)
     }
-    pub async fn check_connected(&mut self) -> Result<(), Error> {
+    async fn check_connected(&mut self) -> Result<(), Error> {
         if let Inner::Ready(ep) = &mut self.inner {
             let channel = utils::try_connect(MAX_TRY_CONNECT, ep.clone())
                 .await
@@ -73,9 +69,5 @@ impl<C: Client> Service<C> {
                 }
             }
         }
-        // req.request(cli).await.map(|v| v.into_inner()).map_err(|e| {
-        //     xlog_rs::log::warn(format!("request failed: {}", e).as_str());
-        //     Error::new(format!("request failed: {}", e))
-        // })
     }
 }
