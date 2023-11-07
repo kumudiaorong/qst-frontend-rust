@@ -1,11 +1,11 @@
-pub mod error;
-pub use error::Error;
+mod error;
 mod service;
-use std::collections::HashMap;
 
-pub use service::Service;
-use service::{DaemonService, ExtService, RequestExtAddr, RequestSetup};
+pub use error::Error;
 pub use service::{RequestSearch, RequestSubmit};
+
+use service::{DaemonService, ExtService, RequestExtAddr, RequestSetup};
+use std::collections::HashMap;
 use xlog_rs::log;
 pub struct Server {
     dae: DaemonService,
@@ -59,13 +59,10 @@ impl Server {
                 )
             })
             .unzip();
-        // self.exts.extend(exts.into_iter().filter_map(|e| e));
-        // self.by_prompt.extend(by_prompt);
-        // Ok(())
         Ok(Self {
-            dae: dae,
+            dae,
             exts: exts.into_iter().filter_map(|e| e).collect(),
-            by_prompt: by_prompt,
+            by_prompt,
         })
     }
 }

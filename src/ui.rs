@@ -38,6 +38,7 @@ fn convert_select_msg(msg: select::Message) -> Message {
 pub enum FromUi {
     InputChanged(String),
     Select(select::Message),
+    Setting(setting::Message),
     Submit,
     HideSetting,
 }
@@ -94,6 +95,7 @@ pub struct App {
     prompt: String,
     runstate: Runstate,
     is_setting: bool,
+    setting: setting::Setting,
 }
 
 impl App {
@@ -152,6 +154,7 @@ impl iced::Application for App {
                 prompt: String::new(),
                 flags,
                 is_setting: false,
+                setting: setting::Setting::new(),
             },
             window::resize(WIN_INIT_SIZE),
         )
@@ -167,11 +170,7 @@ impl iced::Application for App {
                 Err(e) => {
                     log::warn(format!("input failed: {:?}", e).as_str());
                     Command::perform(
-                        async {
-                            // use tokio::time::{sleep as async_sleep, Duration};
-                            // async_sleep(Duration::from_millis(200)).await;
-                            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                        },
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)),
                         move |_| Self::Message::ToServer(req),
                     )
                 }
@@ -265,6 +264,10 @@ impl iced::Application for App {
                     self.is_setting = false;
                     Command::none()
                 }
+                FromUi::Setting(msg) => {
+                    // self.is_setting = false;
+                    Command::none()
+                }
             },
             Self::Message::UserEvent(e) => {
                 if matches!(e, iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
@@ -338,9 +341,14 @@ impl iced::Application for App {
             .height(iced::Length::Fill)
             .width(iced::Length::Fill);
         if self.is_setting {
-            modal::Modal::new(base, widget::text("this is a test"))
-                .on_blur(Self::Message::FromUi(FromUi::HideSetting))
-                .into()
+            modal::Modal::new(
+                base,
+                self.setting
+                    .view(&self.select.apps)
+                    .map(|msg| Self::Message::FromUi(FromUi::Setting(msg))),
+            )
+            .on_blur(Self::Message::FromUi(FromUi::HideSetting))
+            .into()
         } else {
             base.into()
         }

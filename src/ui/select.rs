@@ -26,7 +26,7 @@ pub type Flags = u16;
 
 pub struct Select {
     id: scrollable::Id,
-    apps: Vec<Item>,
+    pub apps: Vec<Item>,
     selected_index: usize,
     height: u16,
     scroll_start: u16,

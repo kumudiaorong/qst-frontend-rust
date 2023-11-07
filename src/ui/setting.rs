@@ -22,15 +22,11 @@ pub struct Flags {
 }
 
 pub struct Setting {
-    exts: Vec<ExtInfo>,
     selected_ext: usize,
 }
 impl Setting {
-    pub fn new(flags: Flags) -> Self {
-        Self {
-            exts: flags.exts,
-            selected_ext: 0,
-        }
+    pub fn new() -> Self {
+        Self { selected_ext: 0 }
     }
     pub fn update(&mut self, msg: Message) -> Command<Message> {
         match msg {
@@ -39,7 +35,7 @@ impl Setting {
             }
         }
     }
-    pub fn view(&self) -> iced::Element<'_, Message> {
+    pub fn view(&self, exts: &Vec<super::Item>) -> iced::Element<'_, Message> {
         #[derive(Debug, Clone, PartialEq, Eq)]
         struct PickItem {
             name: String,
@@ -55,14 +51,12 @@ impl Setting {
                 self.name.clone()
             }
         }
-        let opts = self
-            .exts
+        let opts = exts
             .iter()
             .enumerate()
             .map(|(idx, ext)| PickItem::new(ext.name.clone(), idx))
             .collect::<Vec<_>>();
-        let selected = self
-            .exts
+        let selected = exts
             .get(self.selected_ext)
             .map(|ext| PickItem::new(ext.name.clone(), self.selected_ext));
         let pick =
