@@ -1,5 +1,6 @@
 mod flags;
 pub use flags::Flags;
+use iced::Application;
 
 mod modal;
 mod select;
@@ -40,7 +41,6 @@ pub enum FromUi {
     Select(select::Message),
     Setting(setting::Message),
     Submit,
-    HideSetting,
 }
 #[derive(Debug, Clone)]
 pub enum FromServer {
@@ -94,8 +94,6 @@ pub struct App {
     input: String,
     prompt: String,
     runstate: Runstate,
-    is_setting: bool,
-    setting: setting::Setting,
 }
 
 impl App {
@@ -153,8 +151,6 @@ impl iced::Application for App {
                 runstate: Runstate::Select,
                 prompt: String::new(),
                 flags,
-                is_setting: false,
-                setting: setting::Setting::new(),
             },
             window::resize(WIN_INIT_SIZE),
         )
@@ -260,10 +256,6 @@ impl iced::Application for App {
                     }
                     Command::none()
                 }
-                FromUi::HideSetting => {
-                    self.is_setting = false;
-                    Command::none()
-                }
                 FromUi::Setting(msg) => {
                     // self.is_setting = false;
                     Command::none()
@@ -276,7 +268,19 @@ impl iced::Application for App {
                 }) if modifiers.control())
                 {
                     log::info("ctrl-tab pressed");
-                    self.is_setting = true;
+                    let tx = self.tx.clone().unwrap();
+                    tokio::spawn(async move {
+                        let s = iced::settings::Settings::with_flags(setting::Flags {
+                            tx,
+                            exts: vec![setting::ExtInfo {
+                                name: "test".to_string(),
+                                id: 0,
+                                dir: "dir".to_string(),
+                                exec: "exec".to_string(),
+                            }],
+                        });
+                        setting::Setting::run(s).unwrap();
+                    });
                     return Command::none();
                 } else {
                     match e {
@@ -340,17 +344,6 @@ impl iced::Application for App {
             .padding(PADDING)
             .height(iced::Length::Fill)
             .width(iced::Length::Fill);
-        if self.is_setting {
-            modal::Modal::new(
-                base,
-                self.setting
-                    .view(&self.select.apps)
-                    .map(|msg| Self::Message::FromUi(FromUi::Setting(msg))),
-            )
-            .on_blur(Self::Message::FromUi(FromUi::HideSetting))
-            .into()
-        } else {
-            base.into()
-        }
+        base.into()
     }
 }

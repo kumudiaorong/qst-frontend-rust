@@ -13,29 +13,45 @@ pub struct ExtInfo {
     pub dir: String,
     pub exec: String,
 }
+use iced_futures::futures::channel::mpsc as iced_mpsc;
 #[derive(std::fmt::Debug, Clone)]
 pub enum Message {
     PickExt(usize),
 }
 pub struct Flags {
+    pub tx: iced_mpsc::Sender<super::ToServer>,
     pub exts: Vec<ExtInfo>,
 }
 
 pub struct Setting {
     selected_ext: usize,
+    exts: Vec<ExtInfo>,
+    tx: iced_mpsc::Sender<super::ToServer>,
 }
-impl Setting {
-    pub fn new() -> Self {
-        Self { selected_ext: 0 }
+impl iced::Application for Setting {
+    type Executor = iced::executor::Default;
+    type Message = Message;
+    type Flags = Flags;
+    type Theme = iced::Theme;
+    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+        let setting = Self {
+            selected_ext: 0,
+            exts: flags.exts,
+            tx: flags.tx,
+        };
+        (setting, Command::none())
     }
-    pub fn update(&mut self, msg: Message) -> Command<Message> {
+    fn update(&mut self, msg: Message) -> Command<Message> {
         match msg {
             Message::PickExt(idx) => {
                 todo!()
             }
         }
     }
-    pub fn view(&self, exts: &Vec<super::Item>) -> iced::Element<'_, Message> {
+    fn title(&self) -> String {
+        "Setting".to_string()
+    }
+    fn view(&self) -> iced::Element<'_, Message> {
         #[derive(Debug, Clone, PartialEq, Eq)]
         struct PickItem {
             name: String,
@@ -51,12 +67,14 @@ impl Setting {
                 self.name.clone()
             }
         }
-        let opts = exts
+        let opts = self
+            .exts
             .iter()
             .enumerate()
             .map(|(idx, ext)| PickItem::new(ext.name.clone(), idx))
             .collect::<Vec<_>>();
-        let selected = exts
+        let selected = self
+            .exts
             .get(self.selected_ext)
             .map(|ext| PickItem::new(ext.name.clone(), self.selected_ext));
         let pick =

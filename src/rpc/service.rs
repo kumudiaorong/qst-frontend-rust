@@ -13,6 +13,7 @@ use request::Request;
 use tonic::{transport::Endpoint, Code};
 use xlog_rs::log;
 
+#[derive(Debug, Clone)]
 enum Inner<C> {
     Ready(Endpoint),
     Connected(C),
@@ -20,6 +21,7 @@ enum Inner<C> {
 pub trait Client {
     fn new(cli: tonic::transport::Channel) -> Self;
 }
+#[derive(Debug, Clone)]
 pub struct Service<C: Client> {
     inner: Inner<C>,
 }
