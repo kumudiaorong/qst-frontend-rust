@@ -27,6 +27,5 @@ git submodule update --init
 #### Build
 
 ```bash
-cargo b --bin qst-f --release
+pnpm tauri build
 ```
-The binary will be in `target/release/qst-f`.

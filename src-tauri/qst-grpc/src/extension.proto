@@ -1,0 +1,31 @@
+syntax = "proto3";
+import "common.proto";
+package extension;
+option go_package = "qst-ext/pb/ext";
+message DisplayItem {
+  uint32 obj_id = 1;
+  string name = 2;
+  optional string hint = 3;
+}
+
+message DisplayList { repeated DisplayItem list = 1; }
+
+message Input { string content = 1; }
+message SubmitHint {
+  uint32 obj_id = 1;
+  optional string hint = 3;
+}
+message FillHint { uint32 obj_id = 1; }
+message ExtAddrWithId {
+  string id = 1;
+  string addr = 2;
+}
+service Main {
+  rpc Search(Input) returns (DisplayList) {}
+  rpc Submit(SubmitHint) returns (common.Empty) {}
+  // rpc Fill(FillHint) returns (FillResult) {}
+}
+
+service Ext {
+  rpc SetExtAddr(ExtAddrWithId) returns (common.Empty) {}
+}

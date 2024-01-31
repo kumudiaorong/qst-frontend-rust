@@ -1,0 +1,4 @@
+syntax = "proto3";
+package common;
+option go_package = "qst-ext/pb/common";
+message Empty {}

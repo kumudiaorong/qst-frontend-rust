@@ -1,0 +1,57 @@
+mod daemon;
+mod def;
+mod error;
+mod extension;
+mod request;
+mod utils;
+const MAX_TRY_CONNECT: usize = 3;
+
+pub use daemon::{RequestExtAddr, RequestSetup, Service as DaemonService};
+pub use def::extension::DisplayList;
+pub use error::Error;
+pub use extension::{RequestSearch, RequestSubmit, Service as ExtService};
+use request::Request;
+use tonic::{transport::Endpoint, Code};
+
+pub trait Client {
+    fn new(cli: tonic::transport::Channel) -> Self;
+}
+#[derive(Debug, Clone)]
+pub struct Service<C: Client> {
+    inner: C,
+}
+impl<C: Client> Service<C> {
+    pub async fn new(endpoint: Endpoint) -> Result<Self, Error> {
+        let channel = utils::try_connect(MAX_TRY_CONNECT, endpoint.clone())
+            .await
+            .map_err(|e| Error::new(format!("can't create endpoint {:#?}", e)))?;
+        xlog_rs::info!("connected to {}", endpoint.uri());
+        Ok(Self {
+            inner: C::new(channel),
+        })
+    }
+    pub async fn with_addr(addr: &str) -> Result<Self, Error> {
+        let ep = Endpoint::from_shared(format!("http://{}", addr)).map_err(|e| {
+            xlog_rs::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
+            Error::new(format!("can't create endpoint {:#?}", e))
+        })?;
+        Self::new(ep).await
+    }
+    pub async fn request<T>(&mut self, req: impl Request<C, T> + Clone) -> Result<T, Error> {
+        loop {
+            let ret = req
+                .clone()
+                .request(&mut self.inner)
+                .await
+                .map(|v| v.into_inner());
+            match ret {
+                Ok(v) => break Ok(v),
+                Err(status) => {
+                    if status.code() != Code::Unavailable {
+                        break Err(Error::new(format!("request failed: {}", status)));
+                    }
+                }
+            }
+        }
+    }
+}
