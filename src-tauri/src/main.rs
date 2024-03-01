@@ -25,17 +25,17 @@ async fn submit(
 async fn main() {
     log::init(std::io::stdout(), log::Level::Trace);
     use clap::Parser;
-    use tauri::Manager;
     let args = arg::Args::parse();
     tauri::Builder::default()
-        .setup(|app| {
-            #[cfg(debug_assertions)] // only include this code on debug builds
-            {
-                let window = app.get_window("main").unwrap();
-                // window.open_devtools();
-            }
-            Ok(())
-        })
+        // .setup(|app| {
+        //     #[cfg(debug_assertions)] // only include this code on debug builds
+        //     {
+        //         use tauri::Manager;
+        //         let window = app.get_window("main").unwrap();
+        //         window.open_devtools();
+        //     }
+        //     Ok(())
+        // })
         .manage(Mutex::new(
             Server::new(&args.uri)
                 .await
