@@ -3,13 +3,13 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/tauri";
 
 const content = ref("");
-const emit = defineEmits(['list', 'select'])
+const emit = defineEmits(['submit', 'select', 'search'])
 
 async function submit() {
-  emit('list', await invoke("search", { info: content.value }))
+  emit('submit')
 }
 async function input() {
-  emit('list', await invoke("search", { info: content.value }))
+  emit('search', content.value)
 }
 function trans(event) {
   switch (event.key) {
@@ -28,7 +28,7 @@ function trans(event) {
 
 <template>
   <form @submit.prevent="submit">
-    <input id="top-input" v-model="content" @input="input"  @keydown="trans" placeholder="Enter something...">
+    <input id="top-input" v-model="content" @input="input" @keydown="trans" placeholder="Enter something...">
     <!-- <button type="submit">Greet</button> -->
   </form>
   <!-- <p>{{ result }}</p> -->
@@ -37,6 +37,10 @@ function trans(event) {
 
 <style scoped>
 #top-input {
+  border-color: blue;
   padding: 1vh;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
 }
 </style>
