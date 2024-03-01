@@ -13,7 +13,6 @@ pub struct Server {
 impl Server {
     pub async fn get_ext(&mut self, prompt: &str) -> Option<&mut ExtService> {
         let id = self.by_prompt.get(prompt)?;
-        xlog_rs::debug!("Prompt:{}\tId:{}", prompt, id);
         let s = match self.exts.entry(id.clone()) {
             Entry::Vacant(e) => {
                 let addr = self
@@ -30,7 +29,10 @@ impl Server {
                             Some(e.addr)
                         },
                     )?;
-                e.insert(ExtService::with_addr(&addr).await.ok()?)
+                xlog_rs::debug!("start connected to {}:{}", prompt, addr);
+                let service = ExtService::with_addr(&addr).await.ok()?;
+                xlog_rs::info!("connected to {}:{}", prompt, addr);
+                e.insert(service)
             }
             Entry::Occupied(e) => e.into_mut(),
         };
@@ -40,7 +42,8 @@ impl Server {
     pub async fn connect(ep: tonic::transport::Endpoint) -> Result<Self, error::Error> {
         xlog_rs::debug!("start connect to {:#?}", ep.uri());
         //create daemon service
-        let mut dae = DaemonService::new(ep).await?;
+        let mut dae = DaemonService::new(&ep).await?;
+        xlog_rs::info!("connected to server:{}", ep.uri());
         //request for fast config
         let fcfg = dae
             .request(RequestSetup {})

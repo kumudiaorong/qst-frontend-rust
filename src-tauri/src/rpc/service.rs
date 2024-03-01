@@ -21,11 +21,10 @@ pub struct Service<C: Client> {
     inner: C,
 }
 impl<C: Client> Service<C> {
-    pub async fn new(endpoint: Endpoint) -> Result<Self, Error> {
+    pub async fn new(endpoint: &Endpoint) -> Result<Self, Error> {
         let channel = utils::try_connect(MAX_TRY_CONNECT, endpoint.clone())
             .await
             .map_err(|e| Error::new(format!("can't create endpoint {:#?}", e)))?;
-        xlog_rs::info!("connected to {}", endpoint.uri());
         Ok(Self {
             inner: C::new(channel),
         })
@@ -35,7 +34,7 @@ impl<C: Client> Service<C> {
             xlog_rs::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
             Error::new(format!("can't create endpoint {:#?}", e))
         })?;
-        Self::new(ep).await
+        Self::new(&ep).await
     }
     pub async fn request<T>(&mut self, req: impl Request<C, T> + Clone) -> Result<T, Error> {
         loop {
@@ -47,9 +46,17 @@ impl<C: Client> Service<C> {
             match ret {
                 Ok(v) => break Ok(v),
                 Err(status) => {
-                    if status.code() != Code::Unavailable {
-                        break Err(Error::new(format!("request failed: {}", status)));
+                    if status.code() == Code::FailedPrecondition {
+                        match status.message() {
+                            "retry" => continue,
+                            "wait" => {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                continue;
+                            }
+                            _ =>{},
+                        };
                     }
+                    break Err(Error::new(format!("request failed: {}", status)));
                 }
             }
         }
