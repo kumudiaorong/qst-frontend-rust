@@ -6,6 +6,7 @@ pub mod arg;
 pub mod rpc;
 mod server;
 use server::{Server,Item};
+use xlog::log;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -22,7 +23,7 @@ async fn submit(
 }
 #[tokio::main]
 async fn main() {
-    xlog_rs::log::init(std::io::stdout(), xlog_rs::log::Level::Trace);
+    log::init(std::io::stdout(), log::Level::Trace);
     use clap::Parser;
     use tauri::Manager;
     let args = arg::Args::parse();

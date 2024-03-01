@@ -31,7 +31,7 @@ impl<C: Client> Service<C> {
     }
     pub async fn with_addr(addr: &str) -> Result<Self, Error> {
         let ep = Endpoint::from_shared(format!("http://{}", addr)).map_err(|e| {
-            xlog_rs::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
+            xlog::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
             Error::new(format!("can't create endpoint {:#?}", e))
         })?;
         Self::new(&ep).await

@@ -1,10 +1,10 @@
 mod error;
 mod service;
-
 pub use error::Error;
 use service::{DaemonService, ExtService, RequestExtAddr, RequestSetup};
 pub use service::{DisplayList, RequestSearch, RequestSubmit};
 use std::collections::{hash_map::Entry, HashMap};
+use xlog::{debug, error, info, warn};
 pub struct Server {
     dae: DaemonService,
     exts: std::collections::HashMap<String, ExtService>,
@@ -21,17 +21,17 @@ impl Server {
                     .await
                     .map_or_else(
                         |e| {
-                            xlog_rs::error!("get ext port failed: {}", e);
+                            error!("get ext port failed: {}", e);
                             return None;
                         },
                         |e| {
-                            xlog_rs::debug!("get ext port successful: {}", e.addr);
+                            debug!("get ext port successful: {}", e.addr);
                             Some(e.addr)
                         },
                     )?;
-                xlog_rs::debug!("start connected to {}:{}", prompt, addr);
+                debug!("start connected to {}:{}", prompt, addr);
                 let service = ExtService::with_addr(&addr).await.ok()?;
-                xlog_rs::info!("connected to {}:{}", prompt, addr);
+                info!("connected to {}:{}", prompt, addr);
                 e.insert(service)
             }
             Entry::Occupied(e) => e.into_mut(),
@@ -40,10 +40,10 @@ impl Server {
     }
 
     pub async fn connect(ep: tonic::transport::Endpoint) -> Result<Self, error::Error> {
-        xlog_rs::debug!("start connect to {:#?}", ep.uri());
+        debug!("start connect to {:#?}", ep.uri());
         //create daemon service
         let mut dae = DaemonService::new(&ep).await?;
-        xlog_rs::info!("connected to server:{}", ep.uri());
+        info!("connected to server:{}", ep.uri());
         //request for fast config
         let fcfg = dae
             .request(RequestSetup {})
@@ -53,14 +53,14 @@ impl Server {
         let mut exts = HashMap::new();
         let mut by_prompt = HashMap::new();
         for (id, v) in fcfg.fexts.into_iter() {
-            xlog_rs::debug!(
+            debug!(
                 "Ext{{Id:{},\tPrompt:{},\tAddr:{}}}",
                 id,
                 v.prompt,
                 v.addr.clone().unwrap_or("".to_string())
             );
             if let Some(addr) = v.addr {
-                let _ = xlog_rs::warn!(
+                let _ = warn!(
                     res,
                     ExtService::with_addr(&addr).await.map(|service| {
                         exts.insert(id.clone(), service);
