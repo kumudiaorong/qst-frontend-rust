@@ -4,7 +4,6 @@ mod error;
 mod extension;
 mod request;
 mod utils;
-const MAX_TRY_CONNECT: usize = 3;
 
 pub use daemon::{RequestExtAddr, RequestSetup, Service as DaemonService};
 pub use def::extension::DisplayList;
@@ -12,6 +11,7 @@ pub use error::Error;
 pub use extension::{RequestSearch, RequestSubmit, Service as ExtService};
 use request::Request;
 use tonic::{transport::Endpoint, Code};
+use xlog::debug;
 
 pub trait Client {
     fn new(cli: tonic::transport::Channel) -> Self;
@@ -22,15 +22,16 @@ pub struct Service<C: Client> {
 }
 impl<C: Client> Service<C> {
     pub async fn new(endpoint: &Endpoint) -> Result<Self, Error> {
-        let channel = utils::try_connect(MAX_TRY_CONNECT, endpoint.clone())
+        let channel = utils::try_connect(endpoint.clone())
             .await
-            .map_err(|e| Error::new(format!("can't create endpoint {:#?}", e)))?;
+            .map_err(|e| Error::new(format!("endpoint can't connect {:#?}", e)))?;
         Ok(Self {
             inner: C::new(channel),
         })
     }
     pub async fn with_addr(addr: &str) -> Result<Self, Error> {
-        let ep = Endpoint::from_shared(format!("http://{}", addr)).map_err(|e| {
+        debug!("start connect to {}", addr);
+        let ep = Endpoint::from_shared(addr.to_string()).map_err(|e| {
             xlog::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
             Error::new(format!("can't create endpoint {:#?}", e))
         })?;
@@ -53,7 +54,7 @@ impl<C: Client> Service<C> {
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                 continue;
                             }
-                            _ =>{},
+                            _ => {}
                         };
                     }
                     break Err(Error::new(format!("request failed: {}", status)));

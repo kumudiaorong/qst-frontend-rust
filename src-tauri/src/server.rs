@@ -11,6 +11,7 @@ pub struct Server {
     prompt: String,
 }
 use regex::Regex;
+use xlog::debug;
 impl Server {
     pub async fn new(uri: &str) -> Result<Self, String> {
         Ok(Self {
@@ -31,6 +32,7 @@ impl Server {
         return None;
     }
     pub async fn search(&mut self, content: &str) -> Result<Vec<Item>, String> {
+        debug!("search with service: {}", self.prompt);
         let content = self
             .extract_prompt(content)
             .ok_or_else(|| "invalid prompt")?;
