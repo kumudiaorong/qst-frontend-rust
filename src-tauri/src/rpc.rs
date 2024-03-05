@@ -13,29 +13,27 @@ pub struct Server {
 impl Server {
     pub async fn get_ext(&mut self, prompt: &str) -> Option<&mut ExtService> {
         let id = self.by_prompt.get(prompt)?;
-        let s = match self.exts.entry(id.clone()) {
-            Entry::Vacant(e) => {
-                let addr = self
-                    .dae
-                    .request(RequestExtAddr { id: id.clone() })
-                    .await
-                    .map_or_else(
-                        |e| {
-                            error!("get ext port failed: {}", e);
-                            None
-                        },
-                        |e| {
-                            debug!("get ext port successful: {}", e.addr);
-                            Some(e.addr)
-                        },
-                    )?;
-                let service = ExtService::with_addr(&addr).await.ok()?;
-                info!("connected to {}:{}", prompt, addr);
-                e.insert(service)
-            }
-            Entry::Occupied(e) => e.into_mut(),
+        let ventry = match self.exts.entry(id.clone()) {
+            Entry::Vacant(entry) => entry,
+            Entry::Occupied(e) => return Some(e.into_mut()),
         };
-        Some(s)
+        let addr = self
+            .dae
+            .request(RequestExtAddr { id: id.clone() })
+            .await
+            .map_or_else(
+                |e| {
+                    error!("get ext port failed: {}", e);
+                    None
+                },
+                |e| {
+                    debug!("get ext port successful: {}", e.addr);
+                    Some(e.addr)
+                },
+            )?;
+        let service = ExtService::with_addr(&addr).await.ok()?;
+        info!("connected to {}:{}", prompt, addr);
+        Some(ventry.insert(service))
     }
 
     pub async fn connect(ep: tonic::transport::Endpoint) -> Result<Self, error::Error> {
@@ -44,10 +42,7 @@ impl Server {
         let mut dae = DaemonService::new(&ep).await?;
         info!("connected to server:{}", ep.uri());
         //request for fast config
-        let fcfg = dae
-            .request(RequestSetup {})
-            .await
-            .map_err(|e| error::Error::new(format!("get ext port failed: {}", e)))?;
+        let fcfg = dae.request(RequestSetup {}).await?;
         //get extension servers with fast config
         let mut exts = HashMap::new();
         let mut by_prompt = HashMap::new();

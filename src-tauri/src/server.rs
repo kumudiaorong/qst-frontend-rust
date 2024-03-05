@@ -25,11 +25,13 @@ impl Server {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
             Regex::new(r"\|(?P<prompt>\w+)\|(?P<content>.*)").unwrap()
         });
-        if let Some(caps) = RE.captures(s) {
-            self.prompt = caps.name("prompt").unwrap().as_str().to_string();
-            return Some(caps.name("content").unwrap().as_str().to_string());
+        match RE.captures(s) {
+            Some(caps) => {
+                self.prompt = caps.name("prompt").unwrap().as_str().to_string();
+                Some(caps.name("content").unwrap().as_str().to_string())
+            }
+            None => None,
         }
-        return None;
     }
     pub async fn search(&mut self, content: &str) -> Result<Vec<Item>, String> {
         debug!("search with service: {}", self.prompt);
@@ -44,9 +46,9 @@ impl Server {
         service
             .request(rpc::RequestSearch { content })
             .await
-            .map(|mut dl| {
+            .map(|dl| {
                 dl.list
-                    .drain(..)
+                    .into_iter()
                     .map(|d| Item {
                         obj_id: d.obj_id,
                         name: d.name,

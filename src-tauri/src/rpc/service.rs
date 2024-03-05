@@ -1,13 +1,12 @@
 mod daemon;
 mod def;
-mod error;
 mod extension;
 mod request;
 mod utils;
 
+use super::Error;
 pub use daemon::{RequestExtAddr, RequestSetup, Service as DaemonService};
 pub use def::extension::DisplayList;
-pub use error::Error;
 pub use extension::{RequestSearch, RequestSubmit, Service as ExtService};
 use request::Request;
 use tonic::{transport::Endpoint, Code};
@@ -24,17 +23,14 @@ impl<C: Client> Service<C> {
     pub async fn new(endpoint: &Endpoint) -> Result<Self, Error> {
         let channel = utils::try_connect(endpoint.clone())
             .await
-            .map_err(|e| Error::new(format!("endpoint can't connect {:#?}", e)))?;
+            .map_err(Error::from)?;
         Ok(Self {
             inner: C::new(channel),
         })
     }
     pub async fn with_addr(addr: &str) -> Result<Self, Error> {
         debug!("start connect to {}", addr);
-        let ep = Endpoint::from_shared(addr.to_string()).map_err(|e| {
-            xlog::warn!("can't create endpoint with addr: {}, Err: {}", addr, e);
-            Error::new(format!("can't create endpoint {:#?}", e))
-        })?;
+        let ep = Endpoint::from_shared(addr.to_string()).map_err(Error::from)?;
         Self::new(&ep).await
     }
     pub async fn request<T>(&mut self, req: impl Request<C, T> + Clone) -> Result<T, Error> {
@@ -44,22 +40,21 @@ impl<C: Client> Service<C> {
                 .request(&mut self.inner)
                 .await
                 .map(|v| v.into_inner());
-            match ret {
+            let status = match ret {
                 Ok(v) => break Ok(v),
-                Err(status) => {
-                    if status.code() == Code::FailedPrecondition {
-                        match status.message() {
-                            "retry" => continue,
-                            "wait" => {
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                continue;
-                            }
-                            _ => {}
-                        };
+                Err(status) => status,
+            };
+            if status.code() == Code::FailedPrecondition {
+                match status.message() {
+                    "retry" => continue,
+                    "wait" => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
                     }
-                    break Err(Error::new(format!("request failed: {}", status)));
-                }
+                    _ => {}
+                };
             }
+            break Err(Error::unknown(status.message()));
         }
     }
 }
