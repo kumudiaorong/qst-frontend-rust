@@ -3,7 +3,7 @@ use super::{utils::BoxFuture, Client, Request, Service as TService};
 pub use def::daemon::FastConfig;
 use def::{
     common::Empty,
-    daemon::{main_client, ExtAddr, ExtId},
+    daemon::{main_client, ExtAddr, ExtHint},
 };
 type DaemonClient = main_client::MainClient<tonic::transport::Channel>;
 
@@ -25,7 +25,7 @@ impl Request<DaemonClient, FastConfig> for RequestSetup {
         Box::pin(cli.set_up(self))
     }
 }
-pub type RequestExtAddr = ExtId;
+pub type RequestExtAddr = ExtHint;
 
 impl Request<DaemonClient, ExtAddr> for RequestExtAddr {
     fn action(&self) -> &'static str {
