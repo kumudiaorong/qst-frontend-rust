@@ -28,17 +28,11 @@ impl Server {
             self.prompt = caps.name("prompt").unwrap().as_str().to_string();
             return Some(caps.name("content").unwrap().as_str().to_string());
         }
-        return None;
+        None
     }
     pub async fn search(&mut self, content: &str) -> Result<Vec<Item>, String> {
-        let content = self
-            .extract_prompt(content)
-            .ok_or_else(|| "invalid prompt")?;
-        let service = self
-            .rpc
-            .get_ext(&self.prompt)
-            .await
-            .ok_or_else(|| "no service")?;
+        let content = self.extract_prompt(content).ok_or("invalid prompt")?;
+        let service = self.rpc.get_ext(&self.prompt).await.ok_or("no service")?;
         service
             .request(rpc::RequestSearch { content })
             .await
@@ -56,11 +50,7 @@ impl Server {
             .map_err(|e| format!("search failed: {}", e))
     }
     pub async fn submit(&mut self, obj_id: u32, hint: Option<String>) -> Result<(), String> {
-        let service = self
-            .rpc
-            .get_ext(&self.prompt)
-            .await
-            .ok_or_else(|| "no service")?;
+        let service = self.rpc.get_ext(&self.prompt).await.ok_or("no service")?;
         service
             .request(rpc::RequestSubmit { obj_id, hint })
             .await

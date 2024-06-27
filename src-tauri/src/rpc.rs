@@ -22,7 +22,7 @@ impl Server {
                     .map_or_else(
                         |e| {
                             error!("get ext port failed: {}", e);
-                            return None;
+                            None
                         },
                         |e| {
                             debug!("get ext port successful: {}", e.addr);
